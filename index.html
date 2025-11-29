@@ -21,12 +21,12 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
         // Expose Firebase functions globally
         window.firebase = {
-            initializeApp, getAuth, signInAnonymously, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+            initializeApp, getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
             getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc
         };
     </script>
@@ -36,10 +36,9 @@
         
         // --- CONFIGURATION ---
         
-        // IMPORTANT: ADD YOUR EMAIL HERE. Only these emails can Add/Delete players or Log Matches.
+        // 1. ADD YOUR ADMIN EMAILS HERE (Must match Firestore Rules for security!)
         const ADMIN_EMAILS = [
-            "your-email@gmail.com", 
-            "another-admin@gmail.com"
+            "your-email@gmail.com" 
         ];
 
         const ELO_FIREBASE_CONFIG_JSON = {
@@ -89,7 +88,7 @@
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
 
-            // Calculate Admin Status
+            // Calculate Admin Status (Controls UI visibility only)
             const isAdmin = useMemo(() => {
                 return user && user.email && ADMIN_EMAILS.includes(user.email);
             }, [user]);
@@ -110,7 +109,7 @@
                     setAuth(authInstance);
 
                     window.firebase.onAuthStateChanged(authInstance, async (currentUser) => {
-                        setUser(currentUser); // If null, user is logged out
+                        setUser(currentUser); 
                         setIsLoading(false);
                     });
                 } catch (e) {
@@ -143,6 +142,7 @@
                 const playersCollectionRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
                 const q = window.firebase.query(playersCollectionRef);
 
+                // This listener should work anonymously IF Firestore Rules allow "read: if true"
                 const unsubscribe = window.firebase.onSnapshot(q, (snapshot) => {
                     const playerList = snapshot.docs.map(doc => ({
                         id: doc.id,
@@ -151,7 +151,16 @@
                         matchesPlayed: Number(doc.data().matchesPlayed) || 0,
                     }));
                     setPlayers(playerList);
-                }, (e) => setError("Failed to load data."));
+                    setError(null); // Clear errors on success
+                }, (e) => {
+                    console.error("Data Fetch Error:", e);
+                    // Friendly error message
+                    if (e.code === 'permission-denied') {
+                        setError("Database Permission Denied. Check Firestore Rules in Console.");
+                    } else {
+                        setError("Failed to load data.");
+                    }
+                });
                 return () => unsubscribe();
             }, [db]);
 
@@ -216,7 +225,7 @@
                         })
                     ));
                     setActiveTab('leaderboard');
-                } catch (e) { alert("Failed to update ratings."); }
+                } catch (e) { alert("Failed to update ratings: " + e.message); }
             };
 
             // --- Components ---
@@ -279,7 +288,6 @@
                 );
             };
 
-            // LogMatchForm (Only shown to admins now)
             const LogMatchForm = ({ players, onLogMatch }) => {
                 const [teamA, setTeamA] = useState([]);
                 const [teamB, setTeamB] = useState([]);
