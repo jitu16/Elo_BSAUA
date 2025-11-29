@@ -24,7 +24,6 @@
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
-        // Expose Firebase functions globally
         window.firebase = {
             initializeApp, getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
             getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc
@@ -36,7 +35,7 @@
         
         // --- CONFIGURATION ---
         
-        // 1. ADD YOUR ADMIN EMAILS HERE (Must match Firestore Rules for security!)
+        // 1. ADMIN EMAIL
         const ADMIN_EMAILS = [
             "jitumstock@gmail.com" 
         ];
@@ -77,7 +76,6 @@
             return 2.5;
         };
 
-        // --- Main App ---
         function App() {
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
@@ -88,12 +86,20 @@
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
 
-            // Calculate Admin Status (Controls UI visibility only)
+            // --- FIXED ADMIN LOGIC (CASE INSENSITIVE) ---
             const isAdmin = useMemo(() => {
-                return user && user.email && ADMIN_EMAILS.includes(user.email);
+                if (!user || !user.email) return false;
+                
+                // Debugging: Check your browser console (F12) to see these logs
+                console.log("Current User Email:", user.email);
+                console.log("Allowed Admins:", ADMIN_EMAILS);
+
+                // Check if the user's email exists in the admin list (ignoring capitalization)
+                return ADMIN_EMAILS.some(adminEmail => 
+                    adminEmail.trim().toLowerCase() === user.email.trim().toLowerCase()
+                );
             }, [user]);
 
-            // --- Firebase Init ---
             useEffect(() => {
                 if (!window.firebase) {
                     setError("Firebase SDK not loaded.");
@@ -119,7 +125,6 @@
                 }
             }, []);
 
-            // --- Auth Handlers ---
             const handleGoogleLogin = async () => {
                 try {
                     const provider = new window.firebase.GoogleAuthProvider();
@@ -132,17 +137,15 @@
             const handleLogout = async () => {
                 try {
                     await window.firebase.signOut(auth);
-                    setActiveTab('leaderboard'); // Reset tab on logout
+                    setActiveTab('leaderboard');
                 } catch (e) { console.error(e); }
             };
 
-            // --- Data Listener ---
             useEffect(() => {
                 if (!db) return;
                 const playersCollectionRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
                 const q = window.firebase.query(playersCollectionRef);
 
-                // This listener should work anonymously IF Firestore Rules allow "read: if true"
                 const unsubscribe = window.firebase.onSnapshot(q, (snapshot) => {
                     const playerList = snapshot.docs.map(doc => ({
                         id: doc.id,
@@ -151,12 +154,10 @@
                         matchesPlayed: Number(doc.data().matchesPlayed) || 0,
                     }));
                     setPlayers(playerList);
-                    setError(null); // Clear errors on success
+                    setError(null);
                 }, (e) => {
-                    console.error("Data Fetch Error:", e);
-                    // Friendly error message
                     if (e.code === 'permission-denied') {
-                        setError("Database Permission Denied. Check Firestore Rules in Console.");
+                        setError("Database Permission Denied. Check Firestore Rules.");
                     } else {
                         setError("Failed to load data.");
                     }
@@ -165,8 +166,6 @@
             }, [db]);
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
-
-            // --- Actions (Restricted) ---
 
             const handleAddPlayer = async (name, customElo, customMatches) => {
                 if (!db || !isAdmin) return; 
@@ -228,8 +227,7 @@
                 } catch (e) { alert("Failed to update ratings: " + e.message); }
             };
 
-            // --- Components ---
-            
+            // --- UI Components ---
             const PlayerItem = ({ player, rank, isAdmin, onDelete }) => (
                 <div className={`flex justify-between items-center p-3 my-1 rounded-lg transition-all shadow-md ${rank <= 3 ? 'bg-amber-100 border-yellow-500' : 'bg-white border-gray-200'}`}>
                     <div className="flex items-center space-x-3 overflow-hidden">
@@ -256,32 +254,19 @@
                 const [name, setName] = useState('');
                 const [elo, setElo] = useState(1500);
                 const [matches, setMatches] = useState(0);
-
-                const handleSubmit = (e) => {
-                    e.preventDefault();
-                    if (name.trim()) { onAdd(name, elo, matches); }
-                };
+                const handleSubmit = (e) => { e.preventDefault(); if (name.trim()) onAdd(name, elo, matches); };
                 return (
                     <div className="p-4 bg-white rounded-xl shadow-2xl mt-4 border border-blue-100">
                         <h3 className="text-lg font-bold text-gray-700 mb-4">Add / Fix Player</h3>
                         <form onSubmit={handleSubmit} className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase">Player Name</label>
-                                <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" required />
-                            </div>
+                            <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border border-gray-300 rounded" required />
                             <div className="flex space-x-4">
-                                <div className="flex-1">
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Initial Elo</label>
-                                    <input type="number" value={elo} onChange={(e) => setElo(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Matches Played</label>
-                                    <input type="number" value={matches} onChange={(e) => setMatches(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" />
-                                </div>
+                                <input type="number" value={elo} onChange={(e) => setElo(e.target.value)} className="w-full p-2 border border-gray-300 rounded" placeholder="Elo" />
+                                <input type="number" value={matches} onChange={(e) => setMatches(e.target.value)} className="w-full p-2 border border-gray-300 rounded" placeholder="Matches" />
                             </div>
                             <div className="flex justify-end space-x-3 pt-2">
-                                <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-gray-200">Cancel</button>
-                                <button type="submit" className="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded hover:bg-blue-700">Save Player</button>
+                                <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded">Cancel</button>
+                                <button type="submit" className="px-4 py-2 text-sm font-bold text-white bg-blue-600 rounded">Save</button>
                             </div>
                         </form>
                     </div>
@@ -305,26 +290,13 @@
                     else setTeamA(t => [...t, player]);
                 };
 
-                const handleMoveToTeam = (player, targetTeam) => {
-                    if (targetTeam === 'A') {
-                        setTeamB(t => t.filter(p => p.id !== player.id));
-                        setTeamA(t => [...t.filter(p => p.id !== player.id), player]);
-                    } else {
-                        setTeamA(t => t.filter(p => p.id !== player.id));
-                        setTeamB(t => [...t.filter(p => p.id !== player.id), player]);
-                    }
-                };
-
                 const isMatchValid = teamA.length > 0 && teamB.length > 0;
                 const handleSubmit = (e) => { e.preventDefault(); if (isMatchValid) onLogMatch(teamA, teamB, scoreA, scoreB); };
                 
-                const teamAElo = teamA.length ? (teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length).toFixed(0) : '—';
-                const teamBElo = teamB.length ? (teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length).toFixed(0) : '—';
-
                 return (
                     <form onSubmit={handleSubmit} className="p-4 space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-gray-50 p-3 rounded-lg shadow-inner max-h-96 overflow-y-auto order-3 md:order-1 md:col-span-1">
+                            <div className="bg-gray-50 p-3 rounded-lg shadow-inner max-h-96 overflow-y-auto md:col-span-1">
                                 <h3 className="font-bold text-sm mb-2 text-gray-500 uppercase">Available</h3>
                                 {availablePlayers.map(player => (
                                     <button key={player.id} type="button" onClick={() => handlePlayerClick(player)} className="w-full text-left p-2 my-1 bg-white rounded border hover:bg-blue-50 text-sm">
@@ -332,42 +304,20 @@
                                     </button>
                                 ))}
                             </div>
-                            <div className="bg-blue-50 p-4 rounded-lg shadow order-1 md:order-2">
-                                <h3 className="font-bold text-blue-800">Team Blue <span className="text-xs font-normal text-blue-600">(Avg: {teamAElo})</span></h3>
-                                <div className="space-y-1 mt-2">
-                                    {teamA.map(p => (
-                                        <div key={p.id} onClick={() => handleMoveToTeam(p, 'B')} className="cursor-pointer flex justify-between p-2 bg-white rounded text-sm hover:bg-red-50">
-                                            <span>{p.name}</span> <span className="text-gray-400 text-xs">Swap &rarr;</span>
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="bg-blue-50 p-4 rounded-lg shadow">
+                                <h3 className="font-bold text-blue-800">Team Blue</h3>
+                                {teamA.map(p => <div key={p.id} onClick={() => setTeamA(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-1 text-sm bg-white my-1 rounded">{p.name}</div>)}
                             </div>
-                            <div className="bg-red-50 p-4 rounded-lg shadow order-2 md:order-3">
-                                <h3 className="font-bold text-red-800">Team Red <span className="text-xs font-normal text-red-600">(Avg: {teamBElo})</span></h3>
-                                <div className="space-y-1 mt-2">
-                                    {teamB.map(p => (
-                                        <div key={p.id} onClick={() => handleMoveToTeam(p, 'A')} className="cursor-pointer flex justify-between p-2 bg-white rounded text-sm hover:bg-blue-50">
-                                            <span className="text-gray-400 text-xs">&larr; Swap</span> <span>{p.name}</span>
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="bg-red-50 p-4 rounded-lg shadow">
+                                <h3 className="font-bold text-red-800">Team Red</h3>
+                                {teamB.map(p => <div key={p.id} onClick={() => setTeamB(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-1 text-sm bg-white my-1 rounded">{p.name}</div>)}
                             </div>
                         </div>
-                        <div className="bg-white p-4 rounded-xl shadow border space-y-4">
-                            <div className="flex space-x-4">
-                                <div className="flex-1 text-center">
-                                    <label className="block text-blue-600 font-bold mb-1">Blue Goals</label>
-                                    <input type="number" min="0" value={scoreA} onChange={(e) => setScoreA(parseInt(e.target.value)||0)} className="w-20 p-2 text-2xl text-center border-2 border-blue-200 rounded mx-auto block" />
-                                </div>
-                                <div className="flex-1 text-center">
-                                    <label className="block text-red-600 font-bold mb-1">Red Goals</label>
-                                    <input type="number" min="0" value={scoreB} onChange={(e) => setScoreB(parseInt(e.target.value)||0)} className="w-20 p-2 text-2xl text-center border-2 border-red-200 rounded mx-auto block" />
-                                </div>
-                            </div>
+                        <div className="flex space-x-4 bg-white p-4 rounded border">
+                            <input type="number" value={scoreA} onChange={(e) => setScoreA(parseInt(e.target.value)||0)} className="flex-1 p-2 text-center text-2xl border-2 border-blue-200 rounded" />
+                            <input type="number" value={scoreB} onChange={(e) => setScoreB(parseInt(e.target.value)||0)} className="flex-1 p-2 text-center text-2xl border-2 border-red-200 rounded" />
                         </div>
-                        <button type="submit" disabled={!isMatchValid} className={`w-full p-4 text-xl font-bold text-white rounded-xl shadow ${isMatchValid ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400'}`}>
-                            {isMatchValid ? 'Update Ratings' : 'Select Players'}
-                        </button>
+                        <button type="submit" disabled={!isMatchValid} className={`w-full p-4 text-xl font-bold text-white rounded-xl shadow ${isMatchValid ? 'bg-green-600' : 'bg-gray-400'}`}>Update Ratings</button>
                     </form>
                 );
             };
@@ -383,7 +333,8 @@
                                 {user ? (
                                     <div className="flex items-center space-x-3">
                                         <div className="text-right hidden sm:block">
-                                            <p className="text-xs font-bold text-gray-700">{user.displayName || user.email}</p>
+                                            {/* IMPORTANT: WE DISPLAY THE EMAIL HERE SO YOU CAN CHECK IT */}
+                                            <p className="text-xs font-bold text-gray-700">{user.email}</p>
                                             {isAdmin ? (
                                                 <p className="text-[10px] text-red-500 font-bold uppercase tracking-wide">Admin Mode</p>
                                             ) : (
@@ -403,7 +354,6 @@
                         </div>
                         <div className="flex border-t max-w-4xl mx-auto">
                             <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='leaderboard'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>🏆 Rankings</button>
-                            {/* ONLY ADMINS SEE THE MATCH TAB */}
                             {isAdmin && (
                                 <button onClick={() => setActiveTab('logMatch')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='logMatch'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>⚽ Match</button>
                             )}
@@ -417,7 +367,6 @@
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
                                     <h2 className="text-xl font-bold text-gray-700">Players ({sortedPlayers.length})</h2>
-                                    {/* ONLY ADMINS SEE ADD BUTTON */}
                                     {isAdmin && (
                                         <button onClick={() => setIsAddingPlayer(true)} className="px-3 py-1 text-sm font-bold text-white bg-blue-500 rounded hover:bg-blue-600 shadow">+ Add</button>
                                     )}
