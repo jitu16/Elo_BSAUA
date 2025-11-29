@@ -40,7 +40,6 @@
             "jitumstock@gmail.com",
             "swaksharsen@gmail.com",
             "mmshovon109@gmail.com",
-
         ];
 
         const ELO_FIREBASE_CONFIG_JSON = {
@@ -65,15 +64,13 @@
 
         // --- Helper Functions ---
         
-        // NEW: Calculates Elo taking team size into account
         const getEffectiveElo = (teamPlayers, opponentPlayers) => {
             if (teamPlayers.length === 0) return 0;
             const avgElo = teamPlayers.reduce((sum, p) => sum + p.elo, 0) / teamPlayers.length;
             
-            // If teams are uneven, scale the larger team's Elo
             if (teamPlayers.length > opponentPlayers.length && opponentPlayers.length > 0) {
                 const ratio = teamPlayers.length / opponentPlayers.length;
-                return avgElo * ratio; // e.g. 1500 * (6/5) = 1800
+                return avgElo * ratio; 
             }
             return avgElo;
         };
@@ -85,11 +82,11 @@
 
         const getKFactor = (matchesPlayed) => {
             if (matchesPlayed < MATCH_CUTOFF_INITIAL) {
-                return K_INITIAL; // 80 (0-9 matches)
+                return K_INITIAL;
             } else if (matchesPlayed < MATCH_CUTOFF_MIDDLE) {
-                return K_MIDDLE; // 40 (10-29 matches)
+                return K_MIDDLE;
             } else {
-                return K_STABLE; // 20 (30+ matches)
+                return K_STABLE;
             }
         };
 
@@ -108,6 +105,10 @@
             const [players, setPlayers] = useState([]);
             const [activeTab, setActiveTab] = useState('leaderboard');
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
+            
+            // NEW: State for the player currently being edited
+            const [editingPlayer, setEditingPlayer] = useState(null);
+
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
 
@@ -202,6 +203,23 @@
                 } catch (e) { alert("Error adding player: " + e.message); }
             };
 
+            // NEW: Function to update player stats
+            const handleUpdatePlayer = async (id, name, elo, matches) => {
+                if (!db || !isAdmin) return;
+                try {
+                    const playerRef = window.firebase.doc(db, `artifacts/${appId}/public/data/players`, id);
+                    await window.firebase.updateDoc(playerRef, {
+                        name: name,
+                        elo: Number(elo),
+                        matchesPlayed: Number(matches),
+                        updatedBy: user.email
+                    });
+                    setEditingPlayer(null); // Close the modal
+                } catch (e) {
+                    alert("Error updating player: " + e.message);
+                }
+            };
+
             const handleDeletePlayer = async (playerId, playerName) => {
                 if (!db || !isAdmin) return;
                 if (!confirm(`Are you sure you want to PERMANENTLY delete ${playerName}? This cannot be undone.`)) return;
@@ -210,11 +228,10 @@
                 } catch (e) { alert("Error deleting player: " + e.message); }
             }
 
-            // --- UPDATED MATCH LOGIC ---
+            // --- MATCH LOGIC ---
             const handleLogMatch = async (teamA, teamB, scoreA, scoreB) => {
                 if (!db || !isAdmin) return;
                 
-                // Use EFFECTIVE Elo for calculation (accounts for team size)
                 const teamAEffective = getEffectiveElo(teamA, teamB);
                 const teamBEffective = getEffectiveElo(teamB, teamA);
 
@@ -250,23 +267,71 @@
             };
 
             // --- UI Components ---
-            const PlayerItem = ({ player, rank, isAdmin, onDelete }) => (
+            
+            // NEW: Edit Player Form Component
+            const EditPlayerForm = ({ player, onSave, onCancel }) => {
+                const [name, setName] = useState(player.name);
+                const [elo, setElo] = useState(player.elo);
+                const [matches, setMatches] = useState(player.matchesPlayed);
+
+                const handleSubmit = (e) => {
+                    e.preventDefault();
+                    onSave(player.id, name, elo, matches);
+                };
+
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+                            <h3 className="text-xl font-bold text-gray-800 mb-4">Edit Player</h3>
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">Name</label>
+                                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" required />
+                                </div>
+                                <div className="flex space-x-4">
+                                    <div className="flex-1">
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Elo Rating</label>
+                                        <input type="number" value={elo} onChange={(e) => setElo(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Matches</label>
+                                        <input type="number" value={matches} onChange={(e) => setMatches(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4">
+                                    <button type="button" onClick={onCancel} className="px-4 py-2 text-gray-600 bg-gray-100 rounded hover:bg-gray-200">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 font-bold">Save Changes</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                );
+            };
+
+            const PlayerItem = ({ player, rank, isAdmin, onEdit, onDelete }) => (
                 <div className={`flex justify-between items-center p-3 my-1 rounded-lg transition-all shadow-md ${rank <= 3 ? 'bg-amber-100 border-yellow-500' : 'bg-white border-gray-200'}`}>
                     <div className="flex items-center space-x-3 overflow-hidden">
                         <span className={`font-bold flex-shrink-0 ${rank === 1 ? 'text-xl text-yellow-600' : rank <= 3 ? 'text-md text-yellow-800' : 'text-gray-500'}`}>{rank}.</span>
                         <span className="font-semibold text-gray-800 truncate">{player.name}</span>
                     </div>
-                    <div className="flex items-center space-x-4">
-                        <div className="text-right">
+                    <div className="flex items-center space-x-2">
+                        <div className="text-right mr-2">
                             <span className="text-xl font-extrabold text-blue-600">{player.elo}</span>
                             <span className="text-xs text-gray-500 block">({player.matchesPlayed} matches)</span>
                         </div>
                         {isAdmin && (
-                            <button onClick={() => onDelete(player.id, player.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Delete Player">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                            </button>
+                            <div className="flex space-x-1">
+                                <button onClick={() => onEdit(player)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Edit Player">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                </button>
+                                <button onClick={() => onDelete(player.id, player.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Delete Player">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -314,7 +379,6 @@
                 const isMatchValid = teamA.length > 0 && teamB.length > 0;
                 const handleSubmit = (e) => { e.preventDefault(); if (isMatchValid) onLogMatch(teamA, teamB, scoreA, scoreB); };
                 
-                // --- UPDATED PREDICTION LOGIC ---
                 const teamAEff = getEffectiveElo(teamA, teamB);
                 const teamBEff = getEffectiveElo(teamB, teamA);
                 
@@ -428,6 +492,15 @@
                     <main className="flex-grow max-w-4xl mx-auto w-full p-4">
                         {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
 
+                        {/* EDIT PLAYER MODAL */}
+                        {editingPlayer && (
+                            <EditPlayerForm 
+                                player={editingPlayer} 
+                                onSave={handleUpdatePlayer} 
+                                onCancel={() => setEditingPlayer(null)} 
+                            />
+                        )}
+
                         {activeTab === 'leaderboard' && (
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
@@ -441,7 +514,14 @@
 
                                 <div className="space-y-2 pb-10">
                                     {sortedPlayers.map((player, index) => (
-                                        <PlayerItem key={player.id} player={player} rank={index + 1} isAdmin={isAdmin} onDelete={handleDeletePlayer} />
+                                        <PlayerItem 
+                                            key={player.id} 
+                                            player={player} 
+                                            rank={index + 1} 
+                                            isAdmin={isAdmin} 
+                                            onEdit={setEditingPlayer} 
+                                            onDelete={handleDeletePlayer} 
+                                        />
                                     ))}
                                     {sortedPlayers.length === 0 && <p className="text-center text-gray-400 py-10">No players yet.</p>}
                                 </div>
