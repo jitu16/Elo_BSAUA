@@ -36,17 +36,20 @@
         
         // --- CONFIGURATION ---
         
-        // 1. ADD YOUR ADMIN GMAIL HERE TO ENABLE DELETE BUTTONS FOR YOURSELF
-        const ADMIN_EMAILS = ["jitumstock@gmail.com"];
+        // IMPORTANT: ADD YOUR EMAIL HERE. Only these emails can Add/Delete players or Log Matches.
+        const ADMIN_EMAILS = [
+            "your-email@gmail.com", 
+            "another-admin@gmail.com"
+        ];
 
         const ELO_FIREBASE_CONFIG_JSON = {
-                apiKey: "AIzaSyAD6e_Qw0Lcjo0D_tzSuC4C44nFRh23OGM",
-                authDomain: "elobsaua.firebaseapp.com",
-                projectId: "elobsaua",
-                storageBucket: "elobsaua.firebasestorage.app",
-                messagingSenderId: "1084434478120",
-                appId: "1:1084434478120:web:f63b1578390161603f311d",
-                measurementId: "G-JWBLS97QFY"
+              apiKey: "AIzaSyAD6e_Qw0Lcjo0D_tzSuC4C44nFRh23OGM",
+              authDomain: "elobsaua.firebaseapp.com",
+              projectId: "elobsaua",
+              storageBucket: "elobsaua.firebasestorage.app",
+              messagingSenderId: "1084434478120",
+              appId: "1:1084434478120:web:f63b1578390161603f311d",
+              measurementId: "G-JWBLS97QFY"
         };
         
         const appId = "soccer-tracker-prod";
@@ -79,13 +82,14 @@
         function App() {
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
-            const [user, setUser] = useState(null); // Stores full user object
+            const [user, setUser] = useState(null); 
             const [players, setPlayers] = useState([]);
             const [activeTab, setActiveTab] = useState('leaderboard');
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
 
+            // Calculate Admin Status
             const isAdmin = useMemo(() => {
                 return user && user.email && ADMIN_EMAILS.includes(user.email);
             }, [user]);
@@ -106,14 +110,7 @@
                     setAuth(authInstance);
 
                     window.firebase.onAuthStateChanged(authInstance, async (currentUser) => {
-                        if (currentUser) {
-                            setUser(currentUser);
-                        } else {
-                            // Default to anonymous if not signed in
-                            // Note: We don't auto-sign in anon if user explicitly logged out, 
-                            // but for simplicity, we keep the session state.
-                            setUser(null);
-                        }
+                        setUser(currentUser); // If null, user is logged out
                         setIsLoading(false);
                     });
                 } catch (e) {
@@ -129,7 +126,6 @@
                     const provider = new window.firebase.GoogleAuthProvider();
                     await window.firebase.signInWithPopup(auth, provider);
                 } catch (e) {
-                    console.error("Login failed", e);
                     alert("Login failed: " + e.message);
                 }
             };
@@ -137,6 +133,7 @@
             const handleLogout = async () => {
                 try {
                     await window.firebase.signOut(auth);
+                    setActiveTab('leaderboard'); // Reset tab on logout
                 } catch (e) { console.error(e); }
             };
 
@@ -160,15 +157,15 @@
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            // --- Actions ---
+            // --- Actions (Restricted) ---
 
             const handleAddPlayer = async (name, customElo, customMatches) => {
-                if (!db) return;
+                if (!db || !isAdmin) return; 
                 const newPlayer = {
                     name: name.trim(),
                     elo: Number(customElo),
                     matchesPlayed: Number(customMatches),
-                    updatedBy: user ? user.uid : 'anon', 
+                    updatedBy: user.email, 
                     createdAt: new Date().toISOString(),
                 };
                 
@@ -176,25 +173,20 @@
                     const newPlayerRef = window.firebase.doc(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
                     await window.firebase.setDoc(newPlayerRef, newPlayer);
                     setIsAddingPlayer(false);
-                } catch (e) {
-                    alert("Error adding player: " + e.message);
-                }
+                } catch (e) { alert("Error adding player: " + e.message); }
             };
 
             const handleDeletePlayer = async (playerId, playerName) => {
-                if (!db) return;
+                if (!db || !isAdmin) return;
                 if (!confirm(`Are you sure you want to PERMANENTLY delete ${playerName}? This cannot be undone.`)) return;
-
                 try {
                     await window.firebase.deleteDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/players`, playerId));
-                } catch (e) {
-                    alert("Error deleting player: " + e.message);
-                }
+                } catch (e) { alert("Error deleting player: " + e.message); }
             }
 
             const handleLogMatch = async (teamA, teamB, scoreA, scoreB) => {
-                if (!db) return;
-                // ... (Logic remains identical to previous version) ...
+                if (!db || !isAdmin) return;
+                
                 const teamAElo = teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length;
                 const teamBElo = teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length;
                 let sA, sB;
@@ -287,6 +279,7 @@
                 );
             };
 
+            // LogMatchForm (Only shown to admins now)
             const LogMatchForm = ({ players, onLogMatch }) => {
                 const [teamA, setTeamA] = useState([]);
                 const [teamB, setTeamB] = useState([]);
@@ -331,7 +324,6 @@
                                     </button>
                                 ))}
                             </div>
-                            {/* Team A */}
                             <div className="bg-blue-50 p-4 rounded-lg shadow order-1 md:order-2">
                                 <h3 className="font-bold text-blue-800">Team Blue <span className="text-xs font-normal text-blue-600">(Avg: {teamAElo})</span></h3>
                                 <div className="space-y-1 mt-2">
@@ -342,7 +334,6 @@
                                     ))}
                                 </div>
                             </div>
-                            {/* Team B */}
                             <div className="bg-red-50 p-4 rounded-lg shadow order-2 md:order-3">
                                 <h3 className="font-bold text-red-800">Team Red <span className="text-xs font-normal text-red-600">(Avg: {teamBElo})</span></h3>
                                 <div className="space-y-1 mt-2">
@@ -381,13 +372,17 @@
                         <div className="max-w-4xl mx-auto p-4 flex justify-between items-center">
                             <h1 className="text-2xl font-black text-blue-600 tracking-tighter">ELO<span className="text-green-500">Tracker</span></h1>
                             <div>
-                                {user && !user.isAnonymous ? (
+                                {user ? (
                                     <div className="flex items-center space-x-3">
                                         <div className="text-right hidden sm:block">
                                             <p className="text-xs font-bold text-gray-700">{user.displayName || user.email}</p>
-                                            {isAdmin && <p className="text-[10px] text-red-500 font-bold uppercase tracking-wide">Admin Mode</p>}
+                                            {isAdmin ? (
+                                                <p className="text-[10px] text-red-500 font-bold uppercase tracking-wide">Admin Mode</p>
+                                            ) : (
+                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">Viewer Mode</p>
+                                            )}
                                         </div>
-                                        {user.photoURL ? <img src={user.photoURL} className="w-8 h-8 rounded-full border" /> : <div className="w-8 h-8 bg-blue-500 rounded-full text-white flex items-center justify-center font-bold">{user.email[0].toUpperCase()}</div>}
+                                        {user.photoURL ? <img src={user.photoURL} className="w-8 h-8 rounded-full border" /> : <div className="w-8 h-8 bg-blue-500 rounded-full text-white flex items-center justify-center font-bold">{user.email ? user.email[0].toUpperCase() : 'U'}</div>}
                                         <button onClick={handleLogout} className="text-xs text-gray-500 underline hover:text-red-500">Sign Out</button>
                                     </div>
                                 ) : (
@@ -400,7 +395,10 @@
                         </div>
                         <div className="flex border-t max-w-4xl mx-auto">
                             <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='leaderboard'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>🏆 Rankings</button>
-                            <button onClick={() => setActiveTab('logMatch')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='logMatch'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>⚽ Match</button>
+                            {/* ONLY ADMINS SEE THE MATCH TAB */}
+                            {isAdmin && (
+                                <button onClick={() => setActiveTab('logMatch')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='logMatch'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>⚽ Match</button>
+                            )}
                         </div>
                     </header>
                     
@@ -411,7 +409,10 @@
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
                                     <h2 className="text-xl font-bold text-gray-700">Players ({sortedPlayers.length})</h2>
-                                    <button onClick={() => setIsAddingPlayer(true)} className="px-3 py-1 text-sm font-bold text-white bg-blue-500 rounded hover:bg-blue-600 shadow">+ Add</button>
+                                    {/* ONLY ADMINS SEE ADD BUTTON */}
+                                    {isAdmin && (
+                                        <button onClick={() => setIsAddingPlayer(true)} className="px-3 py-1 text-sm font-bold text-white bg-blue-500 rounded hover:bg-blue-600 shadow">+ Add</button>
+                                    )}
                                 </div>
                                 
                                 {isAddingPlayer && (<AddPlayerForm onAdd={handleAddPlayer} onCancel={() => setIsAddingPlayer(false)} />)}
@@ -427,10 +428,14 @@
 
                         {activeTab === 'logMatch' && (
                             <div>
-                                {players.length < 2 ? (
-                                    <div className="text-center py-10 text-gray-500">Add at least 2 players first.</div>
+                                {isAdmin ? (
+                                    players.length < 2 ? (
+                                        <div className="text-center py-10 text-gray-500">Add at least 2 players first.</div>
+                                    ) : (
+                                        <LogMatchForm players={players} onLogMatch={handleLogMatch} />
+                                    )
                                 ) : (
-                                    <LogMatchForm players={players} onLogMatch={handleLogMatch} />
+                                    <div className="text-center py-10 text-red-500 font-bold">Access Restricted: Admins Only.</div>
                                 )}
                             </div>
                         )}
