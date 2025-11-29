@@ -57,9 +57,11 @@
         const firebaseConfig = ELO_FIREBASE_CONFIG_JSON; 
         
         const INITIAL_ELO = 1500;
-        const K_INITIAL = 40; 
+        const K_INITIAL = 80; 
+        const K_MIDDLE = 40;
         const K_STABLE = 20; 
-        const MATCH_CUTOFF = 10;
+        const MATCH_CUTOFF_INITIAL = 10;
+        const MATCH_CUTOFF_MIDDLE = 30;
 
         // --- Helper Functions ---
         
@@ -82,7 +84,13 @@
         };
 
         const getKFactor = (matchesPlayed) => {
-            return matchesPlayed < MATCH_CUTOFF ? K_INITIAL : K_STABLE;
+            if (matchesPlayed < MATCH_CUTOFF_INITIAL) {
+                return K_INITIAL; // 80 (0-9 matches)
+            } else if (matchesPlayed < MATCH_CUTOFF_MIDDLE) {
+                return K_MIDDLE; // 40 (10-29 matches)
+            } else {
+                return K_STABLE; // 20 (30+ matches)
+            }
         };
 
         const getMarginMultiplier = (goalDifference) => {
