@@ -37,7 +37,7 @@
         
         // 1. ADMIN EMAILS
         const ADMIN_EMAILS = [
-            "jitumstock@gmail.com" 
+            "jitumstock@gmail.com"
         ];
 
         const ELO_FIREBASE_CONFIG_JSON = {
@@ -59,6 +59,20 @@
         const MATCH_CUTOFF = 10;
 
         // --- Helper Functions ---
+        
+        // NEW: Calculates Elo taking team size into account
+        const getEffectiveElo = (teamPlayers, opponentPlayers) => {
+            if (teamPlayers.length === 0) return 0;
+            const avgElo = teamPlayers.reduce((sum, p) => sum + p.elo, 0) / teamPlayers.length;
+            
+            // If teams are uneven, scale the larger team's Elo
+            if (teamPlayers.length > opponentPlayers.length && opponentPlayers.length > 0) {
+                const ratio = teamPlayers.length / opponentPlayers.length;
+                return avgElo * ratio; // e.g. 1500 * (6/5) = 1800
+            }
+            return avgElo;
+        };
+
         const calculateExpectedScore = (teamAElo, teamBElo) => {
             const ratingDiff = teamAElo - teamBElo;
             return 1 / (1 + Math.pow(10, -ratingDiff / 400));
@@ -185,14 +199,18 @@
                 } catch (e) { alert("Error deleting player: " + e.message); }
             }
 
+            // --- UPDATED MATCH LOGIC ---
             const handleLogMatch = async (teamA, teamB, scoreA, scoreB) => {
                 if (!db || !isAdmin) return;
                 
-                const teamAElo = teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length;
-                const teamBElo = teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length;
+                // Use EFFECTIVE Elo for calculation (accounts for team size)
+                const teamAEffective = getEffectiveElo(teamA, teamB);
+                const teamBEffective = getEffectiveElo(teamB, teamA);
+
                 let sA, sB;
                 if (scoreA > scoreB) { sA = 1; sB = 0; } else if (scoreA < scoreB) { sA = 0; sB = 1; } else { sA = 0.5; sB = 0.5; }
-                const eA = calculateExpectedScore(teamAElo, teamBElo);
+                
+                const eA = calculateExpectedScore(teamAEffective, teamBEffective);
                 const m = getMarginMultiplier(Math.abs(scoreA - scoreB));
 
                 const updates = [];
@@ -285,12 +303,12 @@
                 const isMatchValid = teamA.length > 0 && teamB.length > 0;
                 const handleSubmit = (e) => { e.preventDefault(); if (isMatchValid) onLogMatch(teamA, teamB, scoreA, scoreB); };
                 
-                // Prediction Logic
-                const teamAElo = teamA.length ? (teamA.reduce((sum, p) => sum + p.elo, 0) / teamA.length).toFixed(0) : '—';
-                const teamBElo = teamB.length ? (teamB.reduce((sum, p) => sum + p.elo, 0) / teamB.length).toFixed(0) : '—';
+                // --- UPDATED PREDICTION LOGIC ---
+                const teamAEff = getEffectiveElo(teamA, teamB);
+                const teamBEff = getEffectiveElo(teamB, teamA);
                 
                 const predictedWinProb = teamA.length && teamB.length 
-                    ? (calculateExpectedScore(parseFloat(teamAElo), parseFloat(teamBElo)) * 100).toFixed(1)
+                    ? (calculateExpectedScore(teamAEff, teamBEff) * 100).toFixed(1)
                     : '50.0';
 
                 return (
@@ -314,8 +332,8 @@
                             
                             {/* TEAM BLUE */}
                             <div className="bg-blue-50 p-4 rounded-lg shadow">
-                                <h3 className="font-bold text-blue-800">Team Blue</h3>
-                                <p className="text-xs text-blue-600 mb-2">Tap player to remove</p>
+                                <h3 className="font-bold text-blue-800">Team Blue ({teamA.length})</h3>
+                                <p className="text-xs text-blue-600 mb-2">Effective Elo: {teamAEff.toFixed(0)}</p>
                                 {teamA.map(p => (
                                     <div key={p.id} onClick={() => setTeamA(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-2 text-sm bg-white my-1 rounded border-l-4 border-blue-500 shadow-sm flex justify-between group">
                                         <span>{p.name}</span>
@@ -326,8 +344,8 @@
 
                             {/* TEAM RED */}
                             <div className="bg-red-50 p-4 rounded-lg shadow">
-                                <h3 className="font-bold text-red-800">Team Red</h3>
-                                <p className="text-xs text-red-600 mb-2">Tap player to remove</p>
+                                <h3 className="font-bold text-red-800">Team Red ({teamB.length})</h3>
+                                <p className="text-xs text-red-600 mb-2">Effective Elo: {teamBEff.toFixed(0)}</p>
                                 {teamB.map(p => (
                                     <div key={p.id} onClick={() => setTeamB(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-2 text-sm bg-white my-1 rounded border-l-4 border-red-500 shadow-sm flex justify-between group">
                                         <span>{p.name}</span>
@@ -343,7 +361,7 @@
                             {/* Prediction Box */}
                             <div className="flex justify-between items-center p-3 bg-gray-100 rounded-lg">
                                 <p className="text-sm font-medium text-gray-600">Predicted Win Chance (Team Blue):</p>
-                                <span className={`text-lg font-extrabold ${teamAElo > teamBElo ? 'text-blue-600' : teamAElo < teamBElo ? 'text-red-600' : 'text-gray-600'}`}>
+                                <span className={`text-lg font-extrabold ${teamAEff > teamBEff ? 'text-blue-600' : teamAEff < teamBEff ? 'text-red-600' : 'text-gray-600'}`}>
                                     {predictedWinProb}%
                                 </span>
                             </div>
