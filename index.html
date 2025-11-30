@@ -58,8 +58,6 @@
         const MATCH_CUTOFF_INITIAL = 10; const MATCH_CUTOFF_MIDDLE = 30;
 
         // --- MATH HELPERS ---
-        const calculateExpectedScore = (teamAElo, teamBElo) => 1 / (1 + Math.pow(10, -(teamAElo - teamBElo) / 400));
-
         const getKFactor = (matchesPlayed) => {
             if (matchesPlayed < MATCH_CUTOFF_INITIAL) return K_INITIAL;
             else if (matchesPlayed < MATCH_CUTOFF_MIDDLE) return K_MIDDLE;
@@ -73,7 +71,164 @@
             return 2.5;
         };
 
-        // --- COMPONENTS ---
+        const calculateExpectedScore = (teamAElo, teamBElo) => 1 / (1 + Math.pow(10, -(teamAElo - teamBElo) / 400));
+
+        // --- SUB-COMPONENTS (Defined Outside App for Stability) ---
+
+        const PlayerRow = ({ p, i, isAdmin, onEdit, onDelete }) => (
+            <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm border mb-2">
+                <div className="flex items-center space-x-3">
+                    <span className={`font-bold w-6 ${i<3 ? 'text-yellow-600':'text-gray-400'}`}>{i+1}.</span>
+                    <div>
+                        <p className="font-bold text-gray-800">{p.name}</p>
+                        <p className="text-[10px] text-gray-400 uppercase">{p.role}</p>
+                    </div>
+                </div>
+                <div className="flex items-center space-x-4">
+                    <div className="text-right">
+                        <p className="font-black text-blue-600">{p.elo}</p>
+                        <p className="text-xs text-gray-400">{p.matchesPlayed} games</p>
+                    </div>
+                    {isAdmin && (
+                        <div className="flex space-x-1">
+                            <button onClick={()=>onEdit(p)} className="p-2 text-gray-400 hover:text-blue-500">✎</button>
+                            <button onClick={()=>onDelete(p.id)} className="p-2 text-gray-400 hover:text-red-500">×</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+
+        const EditModal = ({ player, onSave, onCancel }) => {
+            const [form, setForm] = useState({...player});
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-3">
+                        <h3 className="font-bold">Edit Player</h3>
+                        <input className="w-full border p-2 rounded" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} placeholder="Name" />
+                        <select className="w-full border p-2 rounded" value={form.role} onChange={e=>setForm({...form, role:e.target.value})}>
+                            <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                        </select>
+                        <div className="flex space-x-2">
+                            <div className="flex-1"><label className="text-xs">Elo</label><input type="number" className="w-full border p-2 rounded" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} /></div>
+                            <div className="flex-1"><label className="text-xs">Matches</label><input type="number" className="w-full border p-2 rounded" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} /></div>
+                        </div>
+                        <div className="flex justify-end space-x-2 pt-2">
+                            <button onClick={onCancel} className="px-3 py-1 bg-gray-200 rounded">Cancel</button>
+                            <button onClick={()=>onSave(player.id, form)} className="px-3 py-1 bg-blue-600 text-white rounded">Save</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AddPlayerForm = ({ onAdd, onCancel }) => {
+            const [name, setName] = useState('');
+            const [role, setRole] = useState('Midfielder');
+            const [elo, setElo] = useState(1500);
+            return (
+                <div className="bg-white p-3 rounded shadow mb-3">
+                    <div className="flex space-x-2 mb-2">
+                        <input value={name} onChange={e=>setName(e.target.value)} className="border p-1 rounded flex-1" placeholder="Name" />
+                        <select value={role} onChange={e=>setRole(e.target.value)} className="border p-1 rounded">
+                            <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                        </select>
+                    </div>
+                    <div className="flex justify-between">
+                        <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="border p-1 rounded w-20" />
+                        <div className="space-x-2">
+                            <button onClick={onCancel} className="text-gray-500">Cancel</button>
+                            <button onClick={()=>name && onAdd(name, role, elo)} className="bg-blue-600 text-white px-3 rounded">Save</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const LogMatchView = ({ players, onLogMatch }) => {
+            const [teamA, setTeamA] = useState([]);
+            const [teamB, setTeamB] = useState([]);
+            const [scoreA, setScoreA] = useState(0);
+            const [scoreB, setScoreB] = useState(0);
+
+            const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
+
+            const addToTeam = (p, team) => {
+                const entry = { ...p, matchGoals: 0, matchAssists: 0 };
+                if(team==='A') setTeamA([...teamA, entry]);
+                else setTeamB([...teamB, entry]);
+            };
+
+            const updateMatchStat = (id, team, field, delta) => {
+                const updateList = (list) => list.map(p => {
+                    if (p.id !== id) return p;
+                    const val = Math.max(0, p[field] + delta);
+                    if(field === 'matchGoals') {
+                        if(team==='A') setScoreA(prev => Math.max(0, prev + (val - p.matchGoals)));
+                        else setScoreB(prev => Math.max(0, prev + (val - p.matchGoals)));
+                    }
+                    return { ...p, [field]: val };
+                });
+                if(team==='A') setTeamA(updateList(teamA));
+                else setTeamB(updateList(teamB));
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div className="bg-gray-100 p-2 rounded max-h-60 overflow-y-auto md:order-2">
+                            <p className="text-xs font-bold text-gray-500 mb-2">ROSTER</p>
+                            {available.map(p => (
+                                <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
+                                    <span>{p.name}</span>
+                                    <div className="space-x-1">
+                                        <button onClick={()=>addToTeam(p,'A')} className="text-xs bg-blue-100 text-blue-600 px-1 rounded">+Blu</button>
+                                        <button onClick={()=>addToTeam(p,'B')} className="text-xs bg-red-100 text-red-600 px-1 rounded">+Red</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        {['A', 'B'].map(teamKey => (
+                            <div key={teamKey} className={`p-2 rounded md:order-${teamKey==='A'?1:3} ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
+                                <div className="flex justify-between items-center mb-2">
+                                    <h3 className={`font-bold ${teamKey==='A'?'text-blue-700':'text-red-700'}`}>{teamKey==='A'?'Blue':'Red'} Team</h3>
+                                    <input type="number" value={teamKey==='A'?scoreA:scoreB} onChange={e=> teamKey==='A'?setScoreA(Number(e.target.value)):setScoreB(Number(e.target.value))} className="w-12 text-center border rounded font-bold" />
+                                </div>
+                                {(teamKey==='A'?teamA:teamB).map(p => (
+                                    <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
+                                        <div className="flex justify-between font-bold">
+                                            <span>{p.name}</span>
+                                            <button onClick={()=>{
+                                                if(teamKey==='A') setTeamA(teamA.filter(x=>x.id!==p.id));
+                                                else setTeamB(teamB.filter(x=>x.id!==p.id));
+                                            }} className="text-red-400">×</button>
+                                        </div>
+                                        <div className="flex space-x-3 mt-1 text-xs">
+                                            <div className="flex items-center space-x-1">
+                                                <span className="text-gray-400 font-bold">G</span>
+                                                <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchGoals', -1)} className="bg-gray-100 px-1 rounded">-</button>
+                                                <span className="w-3 text-center font-bold">{p.matchGoals}</span>
+                                                <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchGoals', 1)} className="bg-blue-100 text-blue-600 px-1 rounded">+</button>
+                                            </div>
+                                            <div className="flex items-center space-x-1">
+                                                <span className="text-gray-400 font-bold">A</span>
+                                                <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchAssists', -1)} className="bg-gray-100 px-1 rounded">-</button>
+                                                <span className="w-3 text-center font-bold">{p.matchAssists}</span>
+                                                <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchAssists', 1)} className="bg-green-100 text-green-600 px-1 rounded">+</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                    <button onClick={()=>onLogMatch(teamA, teamB, scoreA, scoreB)} disabled={teamA.length===0} className="w-full py-3 bg-green-600 text-white font-bold rounded shadow">Update Ratings</button>
+                </div>
+            );
+        };
+
+        // --- MAIN APP COMPONENT ---
 
         function App() {
             const [db, setDb] = useState(null);
@@ -82,7 +237,6 @@
             const [players, setPlayers] = useState([]);
             const [activeTab, setActiveTab] = useState('leaderboard');
             
-            // UI States
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
             const [editingPlayer, setEditingPlayer] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
@@ -92,7 +246,6 @@
 
             const isAdmin = useMemo(() => user && ADMIN_EMAILS.some(email => email.toLowerCase() === user.email.toLowerCase()), [user]);
 
-            // --- INIT ---
             useEffect(() => {
                 if (!window.firebase) { setError("Firebase SDK missing."); setIsLoading(false); return; }
                 try {
@@ -103,14 +256,12 @@
                 } catch (e) { setError("Init Failed: " + e.message); setIsLoading(false); }
             }, []);
 
-            // --- DATA LISTENER (SAFE LOADING) ---
             useEffect(() => {
                 if (!db) return;
                 const q = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
                 const unsub = window.firebase.onSnapshot(q, (snap) => {
                     const loaded = snap.docs.map(d => {
                         const data = d.data();
-                        // SAFE DEFAULTS: If fields are missing (old database), default them to 0 or 'Midfielder'
                         return {
                             id: d.id,
                             name: data.name || "Unknown",
@@ -129,7 +280,6 @@
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            // --- BACKUP & RESTORE ---
             const handleExport = () => {
                 const dataStr = JSON.stringify(players, null, 2);
                 const blob = new Blob([dataStr], { type: "application/json" });
@@ -149,23 +299,19 @@
                     try {
                         const importedData = JSON.parse(ev.target.result);
                         if (!Array.isArray(importedData)) throw new Error("Invalid Backup File");
-                        
                         setIsLoading(true);
                         const batch = window.firebase.writeBatch(db);
                         const colRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
                         
-                        // 1. Delete All
                         const snapshot = await window.firebase.getDocs(colRef);
                         snapshot.forEach(doc => batch.delete(doc.ref));
 
-                        // 2. Add All
                         importedData.forEach(p => {
                             if(p.id && p.name) {
                                 const { id, ...data } = p;
                                 batch.set(window.firebase.doc(colRef, id), data);
                             }
                         });
-
                         await batch.commit();
                         alert("Database Restored!");
                     } catch (err) { alert("Error: " + err.message); } 
@@ -174,7 +320,6 @@
                 reader.readAsText(file);
             };
 
-            // --- ACTIONS ---
             const handleAddPlayer = async (name, role, elo) => {
                 if (!db) return;
                 const newPlayer = {
@@ -198,7 +343,7 @@
             const handleLogMatch = async (teamA, teamB, scoreA, scoreB) => {
                 if (!db) return;
                 
-                // Elo Math (Simplified: Equal Field Assumption for now)
+                // Simplified Math: Assuming Equal Field for simplicity in this Foundation Version
                 const avgA = teamA.reduce((s,p)=>s+p.elo,0)/teamA.length;
                 const avgB = teamB.reduce((s,p)=>s+p.elo,0)/teamB.length;
                 const expA = calculateExpectedScore(avgA, avgB);
@@ -216,16 +361,12 @@
                     const actual = isA ? resA : resB;
                     const exp = isA ? expA : (1-expA);
                     
-                    // Elo Change
                     const k = getKFactor(p.matchesPlayed);
                     const change = Math.round(k * margin * (actual - exp));
                     
-                    // Stats Update
-                    // We check if "matchGoals" or "matchAssists" exists on the player object passed from the form
                     const addedGoals = p.matchGoals || 0;
                     const addedAssists = p.matchAssists || 0;
                     
-                    // Clean Sheet Check
                     const opponentScore = isA ? scoreB : scoreA;
                     const gotCleanSheet = (opponentScore === 0) ? 1 : 0;
 
@@ -244,155 +385,6 @@
                 setActiveTab('leaderboard');
             };
 
-            // --- UI SUB-COMPONENTS ---
-
-            const PlayerRow = ({ p, i }) => (
-                <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm border mb-2">
-                    <div className="flex items-center space-x-3">
-                        <span className={`font-bold w-6 ${i<3 ? 'text-yellow-600':'text-gray-400'}`}>{i+1}.</span>
-                        <div>
-                            <p className="font-bold text-gray-800">{p.name}</p>
-                            <p className="text-[10px] text-gray-400 uppercase">{p.role}</p>
-                        </div>
-                    </div>
-                    <div className="text-right">
-                        <p className="font-black text-blue-600">{p.elo}</p>
-                        <p className="text-xs text-gray-400">{p.matchesPlayed} games</p>
-                    </div>
-                    {isAdmin && (
-                        <div className="ml-2 flex space-x-1">
-                            <button onClick={()=>setEditingPlayer(p)} className="text-gray-300 hover:text-blue-500">✎</button>
-                            <button onClick={()=>handleDeletePlayer(p.id)} className="text-gray-300 hover:text-red-500">×</button>
-                        </div>
-                    )}
-                </div>
-            );
-
-            const EditModal = () => {
-                if (!editingPlayer) return null;
-                const [form, setForm] = useState({...editingPlayer});
-                
-                return (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-3">
-                            <h3 className="font-bold">Edit Player</h3>
-                            <input className="w-full border p-2 rounded" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} placeholder="Name" />
-                            <select className="w-full border p-2 rounded" value={form.role} onChange={e=>setForm({...form, role:e.target.value})}>
-                                <option>Striker</option><option>Midfielder</option><option>Defender</option>
-                            </select>
-                            <div className="flex space-x-2">
-                                <div className="flex-1">
-                                    <label className="text-xs">Elo</label>
-                                    <input type="number" className="w-full border p-2 rounded" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-xs">Matches</label>
-                                    <input type="number" className="w-full border p-2 rounded" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} />
-                                </div>
-                            </div>
-                            {/* Manual Stat Corrections */}
-                            <div className="grid grid-cols-3 gap-2">
-                                <div><label className="text-xs">Goals</label><input type="number" className="w-full border p-1 rounded text-sm" value={form.goals} onChange={e=>setForm({...form, goals:Number(e.target.value)})} /></div>
-                                <div><label className="text-xs">Assists</label><input type="number" className="w-full border p-1 rounded text-sm" value={form.assists} onChange={e=>setForm({...form, assists:Number(e.target.value)})} /></div>
-                                <div><label className="text-xs">CleanShts</label><input type="number" className="w-full border p-1 rounded text-sm" value={form.cleanSheets} onChange={e=>setForm({...form, cleanSheets:Number(e.target.value)})} /></div>
-                            </div>
-                            <div className="flex justify-end space-x-2 pt-2">
-                                <button onClick={()=>setEditingPlayer(null)} className="px-3 py-1 bg-gray-200 rounded">Cancel</button>
-                                <button onClick={()=>handleUpdatePlayer(editingPlayer.id, form)} className="px-3 py-1 bg-blue-600 text-white rounded">Save</button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
-            const LogMatchView = () => {
-                const [teamA, setTeamA] = useState([]);
-                const [teamB, setTeamB] = useState([]);
-                const [scoreA, setScoreA] = useState(0);
-                const [scoreB, setScoreB] = useState(0);
-
-                const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
-
-                const addToTeam = (p, team) => {
-                    const entry = { ...p, matchGoals: 0, matchAssists: 0 };
-                    if(team==='A') setTeamA([...teamA, entry]);
-                    else setTeamB([...teamB, entry]);
-                };
-
-                const updateMatchStat = (id, team, field, delta) => {
-                    const updateList = (list) => list.map(p => {
-                        if (p.id !== id) return p;
-                        const val = Math.max(0, p[field] + delta);
-                        // Auto-score logic
-                        if(field === 'matchGoals') {
-                            if(team==='A') setScoreA(prev => Math.max(0, prev + (val - p.matchGoals)));
-                            else setScoreB(prev => Math.max(0, prev + (val - p.matchGoals)));
-                        }
-                        return { ...p, [field]: val };
-                    });
-                    if(team==='A') setTeamA(updateList(teamA));
-                    else setTeamB(updateList(teamB));
-                };
-
-                const TeamCard = ({ title, list, teamKey, score, setScore }) => (
-                    <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
-                        <div className="flex justify-between items-center mb-2">
-                            <h3 className={`font-bold ${teamKey==='A'?'text-blue-700':'text-red-700'}`}>{title}</h3>
-                            <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold" />
-                        </div>
-                        {list.map(p => (
-                            <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
-                                <div className="flex justify-between font-bold">
-                                    <span>{p.name}</span>
-                                    <button onClick={()=>{
-                                        if(teamKey==='A') setTeamA(teamA.filter(x=>x.id!==p.id));
-                                        else setTeamB(teamB.filter(x=>x.id!==p.id));
-                                    }} className="text-gray-300 hover:text-red-500">×</button>
-                                </div>
-                                {/* GOAL/ASSIST BUTTONS */}
-                                <div className="flex space-x-3 mt-1 text-xs">
-                                    <div className="flex items-center space-x-1">
-                                        <span className="text-gray-400 font-bold">G</span>
-                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchGoals', -1)} className="bg-gray-100 px-1 rounded">-</button>
-                                        <span className="w-3 text-center font-bold">{p.matchGoals}</span>
-                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchGoals', 1)} className="bg-blue-100 text-blue-600 px-1 rounded">+</button>
-                                    </div>
-                                    <div className="flex items-center space-x-1">
-                                        <span className="text-gray-400 font-bold">A</span>
-                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchAssists', -1)} className="bg-gray-100 px-1 rounded">-</button>
-                                        <span className="w-3 text-center font-bold">{p.matchAssists}</span>
-                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchAssists', 1)} className="bg-green-100 text-green-600 px-1 rounded">+</button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                );
-
-                return (
-                    <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <div className="bg-gray-100 p-2 rounded max-h-60 overflow-y-auto md:order-2">
-                                <p className="text-xs font-bold text-gray-500 mb-2">ROSTER</p>
-                                {available.map(p => (
-                                    <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
-                                        <span>{p.name}</span>
-                                        <div className="space-x-1">
-                                            <button onClick={()=>addToTeam(p,'A')} className="text-xs bg-blue-100 text-blue-600 px-1 rounded">+Blu</button>
-                                            <button onClick={()=>addToTeam(p,'B')} className="text-xs bg-red-100 text-red-600 px-1 rounded">+Red</button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="md:order-1"><TeamCard title="Blue Team" list={teamA} teamKey="A" score={scoreA} setScore={setScoreA} /></div>
-                            <div className="md:order-3"><TeamCard title="Red Team" list={teamB} teamKey="B" score={scoreB} setScore={setScoreB} /></div>
-                        </div>
-                        <button onClick={()=>handleLogMatch(teamA, teamB, scoreA, scoreB)} disabled={teamA.length===0} className="w-full py-3 bg-green-600 text-white font-bold rounded shadow">Update Ratings</button>
-                    </div>
-                );
-            };
-
-            // --- RENDER ---
             if (isLoading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin h-10 w-10 border-4 border-blue-500 rounded-full border-t-transparent"></div></div>;
 
             return (
@@ -402,10 +394,7 @@
                             <h1 className="text-xl font-black text-blue-600 tracking-tighter">ELO<span className="text-green-500">Manager</span></h1>
                             <div className="text-xs text-right">
                                 {user ? (
-                                    <div>
-                                        <p>{user.email}</p>
-                                        <button onClick={handleLogout} className="underline text-red-500">Sign Out</button>
-                                    </div>
+                                    <div><p>{user.email}</p><button onClick={handleLogout} className="underline text-red-500">Sign Out</button></div>
                                 ) : <button onClick={handleGoogleLogin} className="bg-gray-100 px-2 py-1 rounded">Sign In</button>}
                             </div>
                         </div>
@@ -417,7 +406,8 @@
 
                     <main className="flex-grow p-4">
                         {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-2 text-sm">{error}</div>}
-                        <EditModal />
+                        
+                        {editingPlayer && <EditModal player={editingPlayer} onSave={handleUpdatePlayer} onCancel={()=>setEditingPlayer(null)} />}
 
                         {activeTab === 'leaderboard' && (
                             <div>
@@ -430,37 +420,15 @@
                                     </div>
                                 )}
                                 
-                                {isAddingPlayer && (
-                                    <div className="bg-white p-3 rounded shadow mb-3">
-                                        <form onSubmit={(e)=>{
-                                            e.preventDefault();
-                                            const fd = new FormData(e.target);
-                                            handleAddPlayer(fd.get('name'), fd.get('role'), fd.get('elo'));
-                                        }}>
-                                            <div className="flex space-x-2 mb-2">
-                                                <input name="name" className="border p-1 rounded flex-1" placeholder="Name" required />
-                                                <select name="role" className="border p-1 rounded">
-                                                    <option>Striker</option><option>Midfielder</option><option>Defender</option>
-                                                </select>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <input name="elo" type="number" defaultValue="1500" className="border p-1 rounded w-20" />
-                                                <div className="space-x-2">
-                                                    <button type="button" onClick={()=>setIsAddingPlayer(false)} className="text-gray-500">Cancel</button>
-                                                    <button type="submit" className="bg-blue-600 text-white px-3 rounded">Save</button>
-                                                </div>
-                                            </div>
-                                        </form>
-                                    </div>
-                                )}
+                                {isAddingPlayer && <AddPlayerForm onAdd={handleAddPlayer} onCancel={()=>setIsAddingPlayer(false)} />}
 
                                 <div>
-                                    {sortedPlayers.map((p, i) => <PlayerRow key={p.id} p={p} i={i} />)}
+                                    {sortedPlayers.map((p, i) => <PlayerRow key={p.id} p={p} i={i} isAdmin={isAdmin} onEdit={setEditingPlayer} onDelete={handleDeletePlayer} />)}
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'logMatch' && isAdmin && <LogMatchView />}
+                        {activeTab === 'logMatch' && isAdmin && <LogMatchView players={players} onLogMatch={handleLogMatch} />}
                     </main>
                 </div>
             );
