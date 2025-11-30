@@ -203,7 +203,7 @@
                 } catch (e) { alert("Error adding player: " + e.message); }
             };
 
-            // NEW: Function to update player stats
+            // Function to update player stats
             const handleUpdatePlayer = async (id, name, elo, matches) => {
                 if (!db || !isAdmin) return;
                 try {
@@ -229,25 +229,46 @@
             }
 
             // --- MATCH LOGIC ---
+
             const handleLogMatch = async (teamA, teamB, scoreA, scoreB) => {
                 if (!db || !isAdmin) return;
                 
+                // 1. Calculate Expectations
                 const teamAEffective = getEffectiveElo(teamA, teamB);
                 const teamBEffective = getEffectiveElo(teamB, teamA);
 
+                // 2. Determine Result (S)
                 let sA, sB;
                 if (scoreA > scoreB) { sA = 1; sB = 0; } else if (scoreA < scoreB) { sA = 0; sB = 1; } else { sA = 0.5; sB = 0.5; }
                 
+                // 3. Determine Modifiers
                 const eA = calculateExpectedScore(teamAEffective, teamBEffective);
                 const m = getMarginMultiplier(Math.abs(scoreA - scoreB));
+
+                // 4. Calculate ZERO-SUM SCALING FACTORS
+                // If Team A is larger (6 vs 5), Team A players gain LESS per person, Team B gain MORE per person.
+                // Formula: Scale = (2 * OpponentSize) / (MySize + OpponentSize)
+                const sizeA = teamA.length;
+                const sizeB = teamB.length;
+                const totalSize = sizeA + sizeB;
+
+                const scaleA = (2 * sizeB) / totalSize; 
+                const scaleB = (2 * sizeA) / totalSize; 
 
                 const updates = [];
                 [...teamA, ...teamB].forEach(player => {
                     const isA = teamA.some(p => p.id === player.id);
                     const S = isA ? sA : sB;
                     const E = isA ? eA : (1 - eA);
+                    
+                    // Select the correct scaler for this player's team
+                    const teamScale = isA ? scaleA : scaleB;
+
                     const K = getKFactor(player.matchesPlayed);
-                    const eloChange = K * m * (S - E);
+                    
+                    // Apply Scaling Factor to the final delta
+                    const eloChange = K * m * (S - E) * teamScale;
+
                     updates.push({
                         id: player.id,
                         newElo: Math.round(player.elo + eloChange),
@@ -267,8 +288,6 @@
             };
 
             // --- UI Components ---
-            
-            // NEW: Edit Player Form Component
             const EditPlayerForm = ({ player, onSave, onCancel }) => {
                 const [name, setName] = useState(player.name);
                 const [elo, setElo] = useState(player.elo);
