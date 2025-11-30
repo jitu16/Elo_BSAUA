@@ -24,11 +24,12 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        // Removed 'orderBy' to prevent index errors. We sort in JS now.
+        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
         window.firebase = {
             initializeApp, getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy
+            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs
         };
     </script>
     
@@ -85,15 +86,21 @@
             return 2.5;
         };
 
-        // --- SUB-COMPONENTS (Defined Outside App to fix rendering bugs) ---
+        // --- SUB-COMPONENTS ---
 
         const StatsTab = ({ players }) => {
             const [filters, setFilters] = useState({ Striker: true, Midfielder: true, Defender: true });
             const [sortConfig, setSortConfig] = useState({ key: 'goals', direction: 'desc' });
 
-            const filtered = players.filter(p => filters[p.role] || !p.role); 
+            // Safe Access: Default role to Midfielder if missing
+            const filtered = players.filter(p => {
+                const role = p.role || 'Midfielder'; 
+                return filters[role];
+            }); 
+            
             const sorted = [...filtered].sort((a, b) => {
-                const valA = a[sortConfig.key] || 0; const valB = b[sortConfig.key] || 0;
+                const valA = a[sortConfig.key] || 0; 
+                const valB = b[sortConfig.key] || 0;
                 return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
             });
 
@@ -129,7 +136,7 @@
                                     <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                                         <td className="p-3 font-medium flex flex-col">
                                             <span>{p.name}</span>
-                                            <span className="text-[10px] text-gray-400 uppercase">{p.role}</span>
+                                            <span className="text-[10px] text-gray-400 uppercase">{p.role || '-'}</span>
                                         </td>
                                         <td className="p-3 text-center font-bold text-gray-700">{p.goals || 0}</td>
                                         <td className="p-3 text-center font-bold text-gray-700">{p.assists || 0}</td>
@@ -145,7 +152,6 @@
 
         const HistoryTab = ({ history }) => {
             const grouped = history.reduce((acc, match) => {
-                // Safe Date Check: Fallback to current time if missing to prevent crash
                 const safeTime = match.timestamp || new Date().toISOString(); 
                 const date = new Date(safeTime).toDateString();
                 if (!acc[date]) acc[date] = [];
@@ -206,7 +212,7 @@
 
         const EditPlayerForm = ({ player, onSave, onCancel }) => {
             const [name, setName] = useState(player.name);
-            const [role, setRole] = useState(player.role || 'Midfielder');
+            const [role, setRole] = useState(player.role || 'Midfielder'); // Safe Default
             const [elo, setElo] = useState(player.elo);
             const [matches, setMatches] = useState(player.matchesPlayed);
 
@@ -250,7 +256,6 @@
                 const updateFn = (list) => list.map(p => {
                     if (p.id !== id) return p;
                     const newVal = Math.max(0, (p[field] || 0) + delta);
-                    // Auto-update team score if goals change
                     if (field === 'matchGoals') {
                         if (team === 'A') setScoreA(s => Math.max(0, s + (newVal - p.matchGoals)));
                         else setScoreB(s => Math.max(0, s + (newVal - p.matchGoals)));
@@ -442,17 +447,39 @@
 
             useEffect(() => {
                 if (!db) return;
+                
+                // Fetch players and inject defaults for old data
                 const playerUnsub = window.firebase.onSnapshot(
                     window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/players`)),
-                    (snap) => setPlayers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+                    (snap) => {
+                        const loaded = snap.docs.map(d => {
+                            const p = d.data();
+                            return { 
+                                id: d.id, 
+                                ...p, 
+                                role: p.role || 'Midfielder', // Default if missing
+                                goals: p.goals || 0,
+                                assists: p.assists || 0,
+                                cleanSheets: p.cleanSheets || 0
+                            };
+                        });
+                        setPlayers(loaded);
+                    },
+                    (err) => { console.error("Player Fetch Error:", err); setError("Error loading players."); }
                 );
+
+                // Fetch history and sort client-side (No 'orderBy' needed on server)
                 const historyUnsub = window.firebase.onSnapshot(
-                    window.firebase.query(
-                        window.firebase.collection(db, `artifacts/${appId}/public/data/history`),
-                        window.firebase.orderBy("timestamp", "desc")
-                    ),
-                    (snap) => setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+                    window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/history`)),
+                    (snap) => {
+                        const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                        // Sort by timestamp DESC in JS
+                        logs.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+                        setHistory(logs);
+                    },
+                    (err) => { console.error("History Fetch Error:", err); }
                 );
+
                 return () => { playerUnsub(); historyUnsub(); };
             }, [db]);
 
