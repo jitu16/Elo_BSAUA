@@ -67,9 +67,7 @@
         const getEffectiveElo = (teamPlayers, opponentPlayers, isTournamentMode) => {
             if (teamPlayers.length === 0) return 0;
             const avgElo = teamPlayers.reduce((sum, p) => sum + p.elo, 0) / teamPlayers.length;
-            if (isTournamentMode) {
-                return avgElo;
-            }
+            if (isTournamentMode) return avgElo;
             if (teamPlayers.length > opponentPlayers.length && opponentPlayers.length > 0) {
                 const ratio = teamPlayers.length / opponentPlayers.length;
                 return avgElo * ratio; 
@@ -126,11 +124,7 @@
                     setDb(window.firebase.getFirestore(app));
                     setAuth(window.firebase.getAuth(app));
                     window.firebase.onAuthStateChanged(window.firebase.getAuth(app), u => { setUser(u); setIsLoading(false); });
-                } catch (e) {
-                    console.error("Init Error:", e);
-                    setError("Failed to initialize Firebase.");
-                    setIsLoading(false);
-                }
+                } catch (e) { console.error(e); setError("Init Error"); setIsLoading(false); }
             }, []);
 
             const handleGoogleLogin = async () => {
@@ -149,7 +143,6 @@
                 const unsub = window.firebase.onSnapshot(q, (snapshot) => {
                     const playerList = snapshot.docs.map(doc => {
                         const data = doc.data();
-                        // SAFE LOADING: Default missing stats
                         return {
                             id: doc.id,
                             name: data.name || "Unknown",
@@ -168,7 +161,6 @@
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            // --- SAVE / LOAD FEATURE ---
             const handleExportData = () => {
                 const dataStr = JSON.stringify(players, null, 2);
                 const blob = new Blob([dataStr], { type: "application/json" });
@@ -182,9 +174,7 @@
             const handleImportData = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                if (!confirm("⚠️ WARNING: This will DELETE all current players and REPLACE them with the backup file. Continue?")) {
-                    e.target.value = null; return;
-                }
+                if (!confirm("⚠️ WARNING: This will DELETE all current players and REPLACE them with the backup file. Continue?")) { e.target.value = null; return; }
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
@@ -209,7 +199,6 @@
                 reader.readAsText(file);
             };
 
-            // --- ACTIONS ---
             const handleAddPlayer = async (name, role, elo) => {
                 if (!db || !isAdmin) return; 
                 const newPlayer = {
@@ -276,33 +265,67 @@
 
             // --- UI COMPONENTS ---
 
-            // NEW: Stats Tab Component (Simple Table, No sorting logic to prevent crashes)
+            // UPDATED: Stats Tab with Filters
             const StatsTab = ({ players }) => {
+                // Filter State
+                const [filters, setFilters] = useState({
+                    Striker: true,
+                    Midfielder: true,
+                    Defender: true
+                });
+
+                // Apply Filters
+                const filteredPlayers = players.filter(p => {
+                    const role = p.role || 'Midfielder'; 
+                    return filters[role];
+                });
+
                 return (
-                    <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-                        <table className="min-w-full text-sm">
-                            <thead className="bg-gray-50 border-b border-gray-200">
-                                <tr>
-                                    <th className="p-3 text-left text-gray-500 font-bold">Player</th>
-                                    <th className="p-3 text-center text-gray-700 font-bold">Goals</th>
-                                    <th className="p-3 text-center text-gray-700 font-bold">Assists</th>
-                                    <th className="p-3 text-center text-gray-700 font-bold">CS</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {players.map((p) => (
-                                    <tr key={p.id} className="hover:bg-blue-50 transition-colors">
-                                        <td className="p-3">
-                                            <div className="font-bold text-gray-800">{p.name}</div>
-                                            <div className="text-[10px] text-gray-400 uppercase tracking-wider">{p.role}</div>
-                                        </td>
-                                        <td className="p-3 text-center font-medium text-gray-600">{p.goals}</td>
-                                        <td className="p-3 text-center font-medium text-gray-600">{p.assists}</td>
-                                        <td className="p-3 text-center font-medium text-gray-600">{p.cleanSheets}</td>
+                    <div className="space-y-4">
+                        {/* Filter Controls */}
+                        <div className="flex justify-center space-x-6 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                            {['Striker', 'Midfielder', 'Defender'].map(role => (
+                                <label key={role} className="flex items-center space-x-2 cursor-pointer select-none">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={filters[role]} 
+                                        onChange={() => setFilters({...filters, [role]: !filters[role]})}
+                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" 
+                                    />
+                                    <span className={`text-sm font-bold ${filters[role] ? 'text-gray-700' : 'text-gray-400'}`}>{role}</span>
+                                </label>
+                            ))}
+                        </div>
+
+                        {/* Table */}
+                        <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
+                            <table className="min-w-full text-sm">
+                                <thead className="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                        <th className="p-3 text-left text-gray-500 font-bold">Player</th>
+                                        <th className="p-3 text-center text-gray-700 font-bold">Goals</th>
+                                        <th className="p-3 text-center text-gray-700 font-bold">Assists</th>
+                                        <th className="p-3 text-center text-gray-700 font-bold">CS</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {filteredPlayers.map((p) => (
+                                        <tr key={p.id} className="hover:bg-blue-50 transition-colors">
+                                            <td className="p-3">
+                                                <div className="font-bold text-gray-800">{p.name}</div>
+                                                <div className="text-[10px] text-gray-400 uppercase tracking-wider">{p.role}</div>
+                                            </td>
+                                            <td className="p-3 text-center font-medium text-gray-600">{p.goals}</td>
+                                            <td className="p-3 text-center font-medium text-gray-600">{p.assists}</td>
+                                            <td className="p-3 text-center font-medium text-gray-600">{p.cleanSheets}</td>
+                                        </tr>
+                                    ))}
+                                    {filteredPlayers.length === 0 && (
+                                        <tr><td colSpan="4" className="p-6 text-center text-gray-400">No players found matching filter.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 );
             };
@@ -453,27 +476,6 @@
                 </div>
             );
 
-            const AddPlayerForm = ({ onAdd, onCancel }) => {
-                const [name, setName] = useState('');
-                const [role, setRole] = useState('Midfielder');
-                const [elo, setElo] = useState(1500);
-                return (
-                    <div className="bg-white p-3 rounded shadow mb-4">
-                        <div className="flex space-x-2 mb-2">
-                            <input value={name} onChange={e=>setName(e.target.value)} className="border p-1 rounded flex-1" placeholder="Name" />
-                            <select value={role} onChange={e=>setRole(e.target.value)} className="border p-1 rounded"><option>Striker</option><option>Midfielder</option><option>Defender</option></select>
-                        </div>
-                        <div className="flex justify-between">
-                            <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="border p-1 w-20 rounded" />
-                            <div className="space-x-2">
-                                <button onClick={onCancel} className="text-gray-500 text-sm">Cancel</button>
-                                <button onClick={()=>name && onAdd(name, role, elo)} className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold">Add</button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
             // --- RENDER ---
             if (isLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
@@ -489,7 +491,7 @@
                         </div>
                         <div className="flex space-x-4 border-b">
                             <button onClick={()=>setActiveTab('leaderboard')} className={`pb-2 font-bold ${activeTab==='leaderboard'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Rankings</button>
-                            {/* ADDED: Stats Button */}
+                            {/* NEW: Stats Tab Button */}
                             <button onClick={()=>setActiveTab('stats')} className={`pb-2 font-bold ${activeTab==='stats'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Stats</button>
                             {isAdmin && <button onClick={()=>setActiveTab('logMatch')} className={`pb-2 font-bold ${activeTab==='logMatch'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Log Match</button>}
                         </div>
