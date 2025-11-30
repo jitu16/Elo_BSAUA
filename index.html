@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ELO Soccer Tracker</title>
+    <title>BSA-UA Football Ranking</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <style>
@@ -12,7 +12,9 @@
         .animate-spin { animation: spin 1s linear infinite; }
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        th.sortable:hover { background-color: #f3f4f6; cursor: pointer; }
+        /* Sortable Header Styles */
+        th.sortable { cursor: pointer; user-select: none; transition: background-color 0.2s; }
+        th.sortable:hover { background-color: #f3f4f6; }
     </style>
 </head>
 <body>
@@ -147,6 +149,7 @@
                 const unsub = window.firebase.onSnapshot(q, (snapshot) => {
                     const playerList = snapshot.docs.map(doc => {
                         const data = doc.data();
+                        // SAFE LOADING
                         return {
                             id: doc.id,
                             name: data.name || "Unknown",
@@ -215,9 +218,7 @@
                     createdAt: new Date().toISOString(),
                 };
                 try {
-                    // Use a new document reference with an auto-generated ID
-                    const newPlayerRef = window.firebase.doc(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
-                    await window.firebase.setDoc(newPlayerRef, newPlayer);
+                    await window.firebase.setDoc(window.firebase.doc(window.firebase.collection(db, `artifacts/${appId}/public/data/players`)), newPlayer);
                     setIsAddingPlayer(false);
                 } catch (e) { alert("Error: " + e.message); }
             };
@@ -277,7 +278,7 @@
 
             const StatsTab = ({ players }) => {
                 const [filters, setFilters] = useState({ Striker: true, Midfielder: true, Defender: true });
-                const [sortConfig, setSortConfig] = useState({ key: 'goals', direction: 'desc' });
+                const [sortConfig, setSortConfig] = useState({ key: 'elo', direction: 'desc' });
 
                 const safePlayers = Array.isArray(players) ? players.filter(p => p && p.name) : [];
 
@@ -324,6 +325,8 @@
                                 <thead className="bg-gray-50 border-b border-gray-200">
                                     <tr>
                                         <th className="p-3 text-left text-gray-500 font-bold">Player</th>
+                                        <th onClick={() => requestSort('elo')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">Elo<SortIcon col="elo"/></th>
+                                        <th onClick={() => requestSort('matchesPlayed')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">Mat<SortIcon col="matchesPlayed"/></th>
                                         <th onClick={() => requestSort('goals')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">G<SortIcon col="goals"/></th>
                                         <th onClick={() => requestSort('assists')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">A<SortIcon col="assists"/></th>
                                         <th onClick={() => requestSort('cleanSheets')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">CS<SortIcon col="cleanSheets"/></th>
@@ -334,14 +337,16 @@
                                         <tr key={p.id || i} className="hover:bg-blue-50 transition-colors">
                                             <td className="p-3 font-medium flex flex-col">
                                                 <span className="text-gray-800">{p.name}</span>
-                                                <span className="text-[10px] text-gray-400 uppercase">{p.role || '-'}</span>
+                                                <span className="text-[10px] text-gray-400 uppercase tracking-wider">{p.role || '-'}</span>
                                             </td>
-                                            <td className="p-3 text-center text-gray-700 font-bold">{p.goals || 0}</td>
-                                            <td className="p-3 text-center text-gray-700 font-bold">{p.assists || 0}</td>
-                                            <td className="p-3 text-center text-gray-700 font-bold">{p.cleanSheets || 0}</td>
+                                            <td className="p-3 text-center font-bold text-blue-600">{p.elo}</td>
+                                            <td className="p-3 text-center font-medium text-gray-600">{p.matchesPlayed}</td>
+                                            <td className="p-3 text-center font-medium text-gray-600">{p.goals || 0}</td>
+                                            <td className="p-3 text-center font-medium text-gray-600">{p.assists || 0}</td>
+                                            <td className="p-3 text-center font-medium text-gray-600">{p.cleanSheets || 0}</td>
                                         </tr>
                                     ))}
-                                    {sorted.length === 0 && <tr><td colSpan="4" className="p-6 text-center text-gray-400">No players found.</td></tr>}
+                                    {sorted.length === 0 && <tr><td colSpan="6" className="p-6 text-center text-gray-400">No players found.</td></tr>}
                                 </tbody>
                             </table>
                         </div>
