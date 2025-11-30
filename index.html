@@ -34,8 +34,6 @@
         const { useState, useEffect, useMemo } = React;
         
         // --- CONFIGURATION ---
-        
-        // 1. ADMIN EMAILS
         const ADMIN_EMAILS = [
             "jitumstock@gmail.com",
             "swaksharsen@gmail.com",
@@ -64,10 +62,18 @@
 
         // --- Helper Functions ---
         
-        const getEffectiveElo = (teamPlayers, opponentPlayers) => {
+        // UPDATED: Now accepts isTournamentMode to disable the size advantage boost
+        const getEffectiveElo = (teamPlayers, opponentPlayers, isTournamentMode) => {
             if (teamPlayers.length === 0) return 0;
             const avgElo = teamPlayers.reduce((sum, p) => sum + p.elo, 0) / teamPlayers.length;
             
+            // If in Tournament Mode (or Friendly), we assume equal players on the FIELD (e.g. 5v5),
+            // even if the roster size is different. So we ignore the ratio multiplier.
+            if (isTournamentMode) {
+                return avgElo;
+            }
+
+            // Normal Pickup Mode: Mismatched roster = Mismatched field -> Apply Advantage
             if (teamPlayers.length > opponentPlayers.length && opponentPlayers.length > 0) {
                 const ratio = teamPlayers.length / opponentPlayers.length;
                 return avgElo * ratio; 
@@ -81,13 +87,9 @@
         };
 
         const getKFactor = (matchesPlayed) => {
-            if (matchesPlayed < MATCH_CUTOFF_INITIAL) {
-                return K_INITIAL;
-            } else if (matchesPlayed < MATCH_CUTOFF_MIDDLE) {
-                return K_MIDDLE;
-            } else {
-                return K_STABLE;
-            }
+            if (matchesPlayed < MATCH_CUTOFF_INITIAL) return K_INITIAL;
+            else if (matchesPlayed < MATCH_CUTOFF_MIDDLE) return K_MIDDLE;
+            else return K_STABLE;
         };
 
         const getMarginMultiplier = (goalDifference) => {
@@ -105,10 +107,7 @@
             const [players, setPlayers] = useState([]);
             const [activeTab, setActiveTab] = useState('leaderboard');
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
-            
-            // NEW: State for the player currently being edited
             const [editingPlayer, setEditingPlayer] = useState(null);
-
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
 
@@ -125,7 +124,6 @@
                     setIsLoading(false);
                     return;
                 }
-                
                 try {
                     const app = window.firebase.initializeApp(firebaseConfig);
                     const firestore = window.firebase.getFirestore(app);
@@ -148,9 +146,7 @@
                 try {
                     const provider = new window.firebase.GoogleAuthProvider();
                     await window.firebase.signInWithPopup(auth, provider);
-                } catch (e) {
-                    alert("Login failed: " + e.message);
-                }
+                } catch (e) { alert("Login failed: " + e.message); }
             };
 
             const handleLogout = async () => {
@@ -195,7 +191,6 @@
                     updatedBy: user.email, 
                     createdAt: new Date().toISOString(),
                 };
-                
                 try {
                     const newPlayerRef = window.firebase.doc(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
                     await window.firebase.setDoc(newPlayerRef, newPlayer);
@@ -203,7 +198,6 @@
                 } catch (e) { alert("Error adding player: " + e.message); }
             };
 
-            // Function to update player stats
             const handleUpdatePlayer = async (id, name, elo, matches) => {
                 if (!db || !isAdmin) return;
                 try {
@@ -214,10 +208,8 @@
                         matchesPlayed: Number(matches),
                         updatedBy: user.email
                     });
-                    setEditingPlayer(null); // Close the modal
-                } catch (e) {
-                    alert("Error updating player: " + e.message);
-                }
+                    setEditingPlayer(null);
+                } catch (e) { alert("Error updating player: " + e.message); }
             };
 
             const handleDeletePlayer = async (playerId, playerName) => {
@@ -229,13 +221,13 @@
             }
 
             // --- MATCH LOGIC ---
-
-            const handleLogMatch = async (teamA, teamB, scoreA, scoreB) => {
+            const handleLogMatch = async (teamA, teamB, scoreA, scoreB, isTournamentMode) => {
                 if (!db || !isAdmin) return;
                 
                 // 1. Calculate Expectations
-                const teamAEffective = getEffectiveElo(teamA, teamB);
-                const teamBEffective = getEffectiveElo(teamB, teamA);
+                // Pass isTournamentMode to disable size advantage if checked
+                const teamAEffective = getEffectiveElo(teamA, teamB, isTournamentMode);
+                const teamBEffective = getEffectiveElo(teamB, teamA, isTournamentMode);
 
                 // 2. Determine Result (S)
                 let sA, sB;
@@ -243,11 +235,11 @@
                 
                 // 3. Determine Modifiers
                 const eA = calculateExpectedScore(teamAEffective, teamBEffective);
+                
+                // Margin Multiplier remains active regardless of mode (as requested)
                 const m = getMarginMultiplier(Math.abs(scoreA - scoreB));
 
                 // 4. Calculate ZERO-SUM SCALING FACTORS
-                // If Team A is larger (6 vs 5), Team A players gain LESS per person, Team B gain MORE per person.
-                // Formula: Scale = (2 * OpponentSize) / (MySize + OpponentSize)
                 const sizeA = teamA.length;
                 const sizeB = teamB.length;
                 const totalSize = sizeA + sizeB;
@@ -261,12 +253,9 @@
                     const S = isA ? sA : sB;
                     const E = isA ? eA : (1 - eA);
                     
-                    // Select the correct scaler for this player's team
                     const teamScale = isA ? scaleA : scaleB;
-
                     const K = getKFactor(player.matchesPlayed);
                     
-                    // Apply Scaling Factor to the final delta
                     const eloChange = K * m * (S - E) * teamScale;
 
                     updates.push({
@@ -293,33 +282,21 @@
                 const [elo, setElo] = useState(player.elo);
                 const [matches, setMatches] = useState(player.matchesPlayed);
 
-                const handleSubmit = (e) => {
-                    e.preventDefault();
-                    onSave(player.id, name, elo, matches);
-                };
+                const handleSubmit = (e) => { e.preventDefault(); onSave(player.id, name, elo, matches); };
 
                 return (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                         <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
                             <h3 className="text-xl font-bold text-gray-800 mb-4">Edit Player</h3>
                             <form onSubmit={handleSubmit} className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Name</label>
-                                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" required />
-                                </div>
+                                <div><label className="text-xs font-bold text-gray-500 uppercase">Name</label><input type="text" value={name} onChange={(e) => setName(e.target.value)} className="w-full p-2 border border-gray-300 rounded" required /></div>
                                 <div className="flex space-x-4">
-                                    <div className="flex-1">
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Elo Rating</label>
-                                        <input type="number" value={elo} onChange={(e) => setElo(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Matches</label>
-                                        <input type="number" value={matches} onChange={(e) => setMatches(e.target.value)} className="w-full p-2 border border-gray-300 rounded focus:border-blue-500" />
-                                    </div>
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase">Elo</label><input type="number" value={elo} onChange={(e) => setElo(e.target.value)} className="w-full p-2 border border-gray-300 rounded" /></div>
+                                    <div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase">Matches</label><input type="number" value={matches} onChange={(e) => setMatches(e.target.value)} className="w-full p-2 border border-gray-300 rounded" /></div>
                                 </div>
                                 <div className="flex justify-end space-x-3 pt-4">
-                                    <button type="button" onClick={onCancel} className="px-4 py-2 text-gray-600 bg-gray-100 rounded hover:bg-gray-200">Cancel</button>
-                                    <button type="submit" className="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 font-bold">Save Changes</button>
+                                    <button type="button" onClick={onCancel} className="px-4 py-2 text-gray-600 bg-gray-100 rounded">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 text-white bg-blue-600 rounded font-bold">Save</button>
                                 </div>
                             </form>
                         </div>
@@ -340,16 +317,8 @@
                         </div>
                         {isAdmin && (
                             <div className="flex space-x-1">
-                                <button onClick={() => onEdit(player)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors" title="Edit Player">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                </button>
-                                <button onClick={() => onDelete(player.id, player.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Delete Player">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                </button>
+                                <button onClick={() => onEdit(player)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
+                                <button onClick={() => onDelete(player.id, player.name)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                             </div>
                         )}
                     </div>
@@ -384,6 +353,8 @@
                 const [teamB, setTeamB] = useState([]);
                 const [scoreA, setScoreA] = useState(0);
                 const [scoreB, setScoreB] = useState(0);
+                
+                const [isTournamentMode, setIsTournamentMode] = useState(false);
 
                 const availablePlayers = useMemo(() => {
                     const selectedIds = new Set([...teamA.map(p => p.id), ...teamB.map(p => p.id)]);
@@ -396,26 +367,22 @@
                 };
 
                 const isMatchValid = teamA.length > 0 && teamB.length > 0;
-                const handleSubmit = (e) => { e.preventDefault(); if (isMatchValid) onLogMatch(teamA, teamB, scoreA, scoreB); };
                 
-                const teamAEff = getEffectiveElo(teamA, teamB);
-                const teamBEff = getEffectiveElo(teamB, teamA);
+                const handleSubmit = (e) => { e.preventDefault(); if (isMatchValid) onLogMatch(teamA, teamB, scoreA, scoreB, isTournamentMode); };
                 
-                const predictedWinProb = teamA.length && teamB.length 
-                    ? (calculateExpectedScore(teamAEff, teamBEff) * 100).toFixed(1)
-                    : '50.0';
+                // Pass isTournamentMode to prediction too so it matches the final calculation
+                const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
+                const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
+                const predictedWinProb = teamA.length && teamB.length ? (calculateExpectedScore(teamAEff, teamBEff) * 100).toFixed(1) : '50.0';
 
                 return (
                     <form onSubmit={handleSubmit} className="p-4 space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {/* AVAILABLE */}
                             <div className="bg-gray-50 p-3 rounded-lg shadow-inner max-h-96 overflow-y-auto md:col-span-1">
                                 <h3 className="font-bold text-sm mb-2 text-gray-500 uppercase">Available</h3>
                                 {availablePlayers.map(player => (
                                     <div key={player.id} className="flex justify-between items-center p-2 my-1 bg-white rounded border text-sm">
-                                        <div className="truncate font-medium text-gray-700 mr-2">
-                                            {player.name} <span className="text-xs text-gray-400">({player.elo})</span>
-                                        </div>
+                                        <div className="truncate font-medium text-gray-700 mr-2">{player.name} <span className="text-xs text-gray-400">({player.elo})</span></div>
                                         <div className="flex space-x-1 flex-shrink-0">
                                             <button type="button" onClick={() => handleAddToTeam(player, 'A')} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded hover:bg-blue-200">+ Blue</button>
                                             <button type="button" onClick={() => handleAddToTeam(player, 'B')} className="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded hover:bg-red-200">+ Red</button>
@@ -423,49 +390,26 @@
                                     </div>
                                 ))}
                             </div>
-                            
-                            {/* TEAM BLUE */}
-                            <div className="bg-blue-50 p-4 rounded-lg shadow">
-                                <h3 className="font-bold text-blue-800">Team Blue ({teamA.length})</h3>
-                                <p className="text-xs text-blue-600 mb-2">Effective Elo: {teamAEff.toFixed(0)}</p>
-                                {teamA.map(p => (
-                                    <div key={p.id} onClick={() => setTeamA(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-2 text-sm bg-white my-1 rounded border-l-4 border-blue-500 shadow-sm flex justify-between group">
-                                        <span>{p.name}</span>
-                                        <span className="text-gray-400 group-hover:text-red-500">x</span>
-                                    </div>
-                                ))}
-                            </div>
-
-                            {/* TEAM RED */}
-                            <div className="bg-red-50 p-4 rounded-lg shadow">
-                                <h3 className="font-bold text-red-800">Team Red ({teamB.length})</h3>
-                                <p className="text-xs text-red-600 mb-2">Effective Elo: {teamBEff.toFixed(0)}</p>
-                                {teamB.map(p => (
-                                    <div key={p.id} onClick={() => setTeamB(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-2 text-sm bg-white my-1 rounded border-l-4 border-red-500 shadow-sm flex justify-between group">
-                                        <span>{p.name}</span>
-                                        <span className="text-gray-400 group-hover:text-red-500">x</span>
-                                    </div>
-                                ))}
-                            </div>
+                            <div className="bg-blue-50 p-4 rounded-lg shadow"><h3 className="font-bold text-blue-800">Team Blue ({teamA.length})</h3><p className="text-xs text-blue-600 mb-2">Effective Elo: {teamAEff.toFixed(0)}</p>{teamA.map(p => (<div key={p.id} onClick={() => setTeamA(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-2 text-sm bg-white my-1 rounded border-l-4 border-blue-500 shadow-sm flex justify-between group"><span>{p.name}</span><span className="text-gray-400 group-hover:text-red-500">x</span></div>))}</div>
+                            <div className="bg-red-50 p-4 rounded-lg shadow"><h3 className="font-bold text-red-800">Team Red ({teamB.length})</h3><p className="text-xs text-red-600 mb-2">Effective Elo: {teamBEff.toFixed(0)}</p>{teamB.map(p => (<div key={p.id} onClick={() => setTeamB(t => t.filter(i => i.id !== p.id))} className="cursor-pointer p-2 text-sm bg-white my-1 rounded border-l-4 border-red-500 shadow-sm flex justify-between group"><span>{p.name}</span><span className="text-gray-400 group-hover:text-red-500">x</span></div>))}</div>
                         </div>
-
-                        {/* PREDICTION AND SCORE */}
                         <div className="bg-white p-4 rounded-xl shadow border space-y-4">
+                            <div className="flex justify-between items-center p-3 bg-gray-100 rounded-lg"><p className="text-sm font-medium text-gray-600">Predicted Win Chance (Team Blue):</p><span className={`text-lg font-extrabold ${teamAEff > teamBEff ? 'text-blue-600' : teamAEff < teamBEff ? 'text-red-600' : 'text-gray-600'}`}>{predictedWinProb}%</span></div>
+                            <div className="flex space-x-4"><input type="number" value={scoreA} onChange={(e) => setScoreA(parseInt(e.target.value)||0)} className="flex-1 p-2 text-center text-2xl border-2 border-blue-200 rounded" placeholder="Blue Score" /><input type="number" value={scoreB} onChange={(e) => setScoreB(parseInt(e.target.value)||0)} className="flex-1 p-2 text-center text-2xl border-2 border-red-200 rounded" placeholder="Red Score" /></div>
                             
-                            {/* Prediction Box */}
-                            <div className="flex justify-between items-center p-3 bg-gray-100 rounded-lg">
-                                <p className="text-sm font-medium text-gray-600">Predicted Win Chance (Team Blue):</p>
-                                <span className={`text-lg font-extrabold ${teamAEff > teamBEff ? 'text-blue-600' : teamAEff < teamBEff ? 'text-red-600' : 'text-gray-600'}`}>
-                                    {predictedWinProb}%
-                                </span>
-                            </div>
-
-                            <div className="flex space-x-4">
-                                <input type="number" value={scoreA} onChange={(e) => setScoreA(parseInt(e.target.value)||0)} className="flex-1 p-2 text-center text-2xl border-2 border-blue-200 rounded" placeholder="Blue Score" />
-                                <input type="number" value={scoreB} onChange={(e) => setScoreB(parseInt(e.target.value)||0)} className="flex-1 p-2 text-center text-2xl border-2 border-red-200 rounded" placeholder="Red Score" />
+                            <div className="flex items-center space-x-2 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <input 
+                                    type="checkbox" 
+                                    id="tournamentMode" 
+                                    checked={isTournamentMode} 
+                                    onChange={(e) => setIsTournamentMode(e.target.checked)} 
+                                    className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300" 
+                                />
+                                <label htmlFor="tournamentMode" className="text-sm font-semibold text-gray-700 select-none cursor-pointer">
+                                    Friendly / Tournament Mode (Equal players on field)
+                                </label>
                             </div>
                         </div>
-                        
                         <button type="submit" disabled={!isMatchValid} className={`w-full p-4 text-xl font-bold text-white rounded-xl shadow ${isMatchValid ? 'bg-green-600' : 'bg-gray-400'}`}>Update Ratings</button>
                     </form>
                 );
@@ -481,90 +425,37 @@
                             <div>
                                 {user ? (
                                     <div className="flex items-center space-x-3">
-                                        <div className="text-right hidden sm:block">
-                                            <p className="text-xs font-bold text-gray-700">{user.email}</p>
-                                            {isAdmin ? (
-                                                <p className="text-[10px] text-red-500 font-bold uppercase tracking-wide">Admin Mode</p>
-                                            ) : (
-                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">Viewer Mode</p>
-                                            )}
-                                        </div>
+                                        <div className="text-right hidden sm:block"><p className="text-xs font-bold text-gray-700">{user.email}</p>{isAdmin ? (<p className="text-[10px] text-red-500 font-bold uppercase tracking-wide">Admin Mode</p>) : (<p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">Viewer Mode</p>)}</div>
                                         {user.photoURL ? <img src={user.photoURL} className="w-8 h-8 rounded-full border" /> : <div className="w-8 h-8 bg-blue-500 rounded-full text-white flex items-center justify-center font-bold">{user.email ? user.email[0].toUpperCase() : 'U'}</div>}
                                         <button onClick={handleLogout} className="text-xs text-gray-500 underline hover:text-red-500">Sign Out</button>
                                     </div>
                                 ) : (
-                                    <button onClick={handleGoogleLogin} className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-full shadow-sm hover:bg-gray-50 transition-colors">
-                                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-4 h-4" />
-                                        <span className="text-sm font-semibold text-gray-700">Sign In</span>
-                                    </button>
+                                    <button onClick={handleGoogleLogin} className="flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-full shadow-sm hover:bg-gray-50 transition-colors"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-4 h-4" /><span className="text-sm font-semibold text-gray-700">Sign In</span></button>
                                 )}
                             </div>
                         </div>
                         <div className="flex border-t max-w-4xl mx-auto">
                             <button onClick={() => setActiveTab('leaderboard')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='leaderboard'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>🏆 Rankings</button>
-                            {isAdmin && (
-                                <button onClick={() => setActiveTab('logMatch')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='logMatch'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>⚽ Match</button>
-                            )}
+                            {isAdmin && (<button onClick={() => setActiveTab('logMatch')} className={`flex-1 py-3 font-bold border-b-2 ${activeTab==='logMatch'?'border-blue-500 text-blue-600':'border-transparent text-gray-400'}`}>⚽ Match</button>)}
                         </div>
                     </header>
-                    
                     <main className="flex-grow max-w-4xl mx-auto w-full p-4">
                         {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
-
-                        {/* EDIT PLAYER MODAL */}
-                        {editingPlayer && (
-                            <EditPlayerForm 
-                                player={editingPlayer} 
-                                onSave={handleUpdatePlayer} 
-                                onCancel={() => setEditingPlayer(null)} 
-                            />
-                        )}
-
+                        {editingPlayer && (<EditPlayerForm player={editingPlayer} onSave={handleUpdatePlayer} onCancel={() => setEditingPlayer(null)} />)}
                         {activeTab === 'leaderboard' && (
                             <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <h2 className="text-xl font-bold text-gray-700">Players ({sortedPlayers.length})</h2>
-                                    {isAdmin && (
-                                        <button onClick={() => setIsAddingPlayer(true)} className="px-3 py-1 text-sm font-bold text-white bg-blue-500 rounded hover:bg-blue-600 shadow">+ Add</button>
-                                    )}
-                                </div>
-                                
+                                <div className="flex justify-between items-center"><h2 className="text-xl font-bold text-gray-700">Players ({sortedPlayers.length})</h2>{isAdmin && (<button onClick={() => setIsAddingPlayer(true)} className="px-3 py-1 text-sm font-bold text-white bg-blue-500 rounded hover:bg-blue-600 shadow">+ Add</button>)}</div>
                                 {isAddingPlayer && (<AddPlayerForm onAdd={handleAddPlayer} onCancel={() => setIsAddingPlayer(false)} />)}
-
-                                <div className="space-y-2 pb-10">
-                                    {sortedPlayers.map((player, index) => (
-                                        <PlayerItem 
-                                            key={player.id} 
-                                            player={player} 
-                                            rank={index + 1} 
-                                            isAdmin={isAdmin} 
-                                            onEdit={setEditingPlayer} 
-                                            onDelete={handleDeletePlayer} 
-                                        />
-                                    ))}
-                                    {sortedPlayers.length === 0 && <p className="text-center text-gray-400 py-10">No players yet.</p>}
-                                </div>
+                                <div className="space-y-2 pb-10">{sortedPlayers.map((player, index) => (<PlayerItem key={player.id} player={player} rank={index + 1} isAdmin={isAdmin} onEdit={setEditingPlayer} onDelete={handleDeletePlayer} />))}{sortedPlayers.length === 0 && <p className="text-center text-gray-400 py-10">No players yet.</p>}</div>
                             </div>
                         )}
-
                         {activeTab === 'logMatch' && (
-                            <div>
-                                {isAdmin ? (
-                                    players.length < 2 ? (
-                                        <div className="text-center py-10 text-gray-500">Add at least 2 players first.</div>
-                                    ) : (
-                                        <LogMatchForm players={players} onLogMatch={handleLogMatch} />
-                                    )
-                                ) : (
-                                    <div className="text-center py-10 text-red-500 font-bold">Access Restricted: Admins Only.</div>
-                                )}
-                            </div>
+                            <div>{isAdmin ? (players.length < 2 ? (<div className="text-center py-10 text-gray-500">Add at least 2 players first.</div>) : (<LogMatchForm players={players} onLogMatch={handleLogMatch} />)) : (<div className="text-center py-10 text-red-500 font-bold">Access Restricted: Admins Only.</div>)}</div>
                         )}
                     </main>
                 </div>
             );
         }
-
         const container = document.getElementById('root');
         const root = ReactDOM.createRoot(container);
         root.render(<App />);
