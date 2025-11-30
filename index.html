@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ELO League Manager</title>
+    <title>ELO Soccer Foundation</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .animate-spin { animation: spin 1s linear infinite; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body>
@@ -39,7 +37,7 @@
         const ADMIN_EMAILS = [
             "jitumstock@gmail.com",
             "swaksharsen@gmail.com",
-            "mmshovon109@gmail.com",
+            "mmshovon109@gmail.com"
         ];
 
         const ELO_FIREBASE_CONFIG_JSON = {
@@ -60,18 +58,6 @@
         const MATCH_CUTOFF_INITIAL = 10; const MATCH_CUTOFF_MIDDLE = 30;
 
         // --- MATH HELPERS ---
-        const getEffectiveElo = (teamPlayers, opponentPlayers, isTournamentMode) => {
-            if (teamPlayers.length === 0) return 0;
-            const avgElo = teamPlayers.reduce((sum, p) => sum + p.elo, 0) / teamPlayers.length;
-            
-            if (isTournamentMode) return avgElo;
-
-            if (teamPlayers.length > opponentPlayers.length && opponentPlayers.length > 0) {
-                return avgElo * (teamPlayers.length / opponentPlayers.length); 
-            }
-            return avgElo;
-        };
-
         const calculateExpectedScore = (teamAElo, teamBElo) => 1 / (1 + Math.pow(10, -(teamAElo - teamBElo) / 400));
 
         const getKFactor = (matchesPlayed) => {
@@ -87,320 +73,16 @@
             return 2.5;
         };
 
-        // --- SUB-COMPONENTS ---
-
-        const StatsTab = ({ players }) => {
-            const [filters, setFilters] = useState({ Striker: true, Midfielder: true, Defender: true });
-            const [sortConfig, setSortConfig] = useState({ key: 'goals', direction: 'desc' });
-
-            const filtered = players.filter(p => filters[p.role]); 
-            
-            const sorted = [...filtered].sort((a, b) => {
-                const valA = a[sortConfig.key] || 0; 
-                const valB = b[sortConfig.key] || 0;
-                return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
-            });
-
-            const requestSort = (key) => {
-                let direction = 'desc';
-                if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc';
-                setSortConfig({ key, direction });
-            };
-
-            return (
-                <div className="space-y-4">
-                    <div className="flex space-x-4 bg-white p-3 rounded-lg shadow text-sm justify-center">
-                        {['Striker', 'Midfielder', 'Defender'].map(role => (
-                            <label key={role} className="flex items-center space-x-1 cursor-pointer select-none">
-                                <input type="checkbox" checked={filters[role]} onChange={() => setFilters({...filters, [role]: !filters[role]})} className="accent-blue-600" />
-                                <span>{role}</span>
-                            </label>
-                        ))}
-                    </div>
-                    <div className="bg-white rounded-lg shadow overflow-hidden">
-                        <table className="min-w-full text-sm">
-                            <thead className="bg-gray-100 border-b">
-                                <tr>
-                                    <th className="p-3 text-left">Player</th>
-                                    <th onClick={() => requestSort('goals')} className="p-3 text-center cursor-pointer hover:bg-gray-200">G {sortConfig.key==='goals' && (sortConfig.direction==='desc'?'↓':'↑')}</th>
-                                    <th onClick={() => requestSort('assists')} className="p-3 text-center cursor-pointer hover:bg-gray-200">A {sortConfig.key==='assists' && (sortConfig.direction==='desc'?'↓':'↑')}</th>
-                                    <th onClick={() => requestSort('cleanSheets')} className="p-3 text-center cursor-pointer hover:bg-gray-200">CS {sortConfig.key==='cleanSheets' && (sortConfig.direction==='desc'?'↓':'↑')}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {sorted.map((p, i) => (
-                                    <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
-                                        <td className="p-3 font-medium flex flex-col">
-                                            <span>{p.name}</span>
-                                            <span className="text-[10px] text-gray-400 uppercase">{p.role}</span>
-                                        </td>
-                                        <td className="p-3 text-center font-bold text-gray-700">{p.goals}</td>
-                                        <td className="p-3 text-center font-bold text-gray-700">{p.assists}</td>
-                                        <td className="p-3 text-center font-bold text-gray-700">{p.cleanSheets}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {sorted.length === 0 && <div className="p-4 text-center text-gray-400">No players found with selected filters.</div>}
-                    </div>
-                </div>
-            );
-        };
-
-        const HistoryTab = ({ history }) => {
-            // Sort matches descending by date (Newest first)
-            const sortedHistory = [...history].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-            const grouped = sortedHistory.reduce((acc, match) => {
-                const date = new Date(match.timestamp).toDateString();
-                if (!acc[date]) acc[date] = [];
-                acc[date].push(match);
-                return acc;
-            }, {});
-
-            return (
-                <div className="space-y-6">
-                    {Object.entries(grouped).map(([date, matches]) => (
-                        <div key={date}>
-                            <h3 className="text-xs font-bold text-gray-400 uppercase mb-2 sticky top-0 bg-gray-50 py-1">{date}</h3>
-                            <div className="space-y-3">
-                                {matches.map((m, idx) => (
-                                    <div key={m.id || idx} className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500 relative">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <div className="text-xl font-black text-gray-800">
-                                                <span className="text-blue-600">{m.scoreA}</span> - <span className="text-red-600">{m.scoreB}</span>
-                                            </div>
-                                            <span className="text-xs text-gray-400">{new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                                        </div>
-                                        {m.isTournamentMode && <span className="absolute top-2 right-2 text-[10px] bg-yellow-100 text-yellow-800 px-1 rounded">TOURNAMENT</span>}
-                                        <div className="grid grid-cols-2 gap-4 text-xs">
-                                            <div>
-                                                <p className="font-bold text-blue-600 border-b mb-1">Blue Team</p>
-                                                {(m.teamA || []).map((p, i) => (
-                                                    <div key={i} className="flex justify-between">
-                                                        <span>{p.name}</span>
-                                                        <span className="text-gray-400">
-                                                            {p.goals > 0 && `⚽${p.goals} `}
-                                                            {p.assists > 0 && `🅰${p.assists}`}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div>
-                                                <p className="font-bold text-red-600 border-b mb-1">Red Team</p>
-                                                {(m.teamB || []).map((p, i) => (
-                                                    <div key={i} className="flex justify-between">
-                                                        <span>{p.name}</span>
-                                                        <span className="text-gray-400">
-                                                            {p.goals > 0 && `⚽${p.goals} `}
-                                                            {p.assists > 0 && `🅰${p.assists}`}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                    {sortedHistory.length === 0 && <p className="text-center text-gray-400 py-10">No matches recorded yet.</p>}
-                </div>
-            );
-        };
-
-        const EditPlayerForm = ({ player, onSave, onCancel }) => {
-            const [name, setName] = useState(player.name);
-            const [role, setRole] = useState(player.role);
-            const [elo, setElo] = useState(player.elo);
-            const [matches, setMatches] = useState(player.matchesPlayed);
-
-            return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <form onSubmit={(e)=>{e.preventDefault(); onSave(player.id, {name, role, elo: Number(elo), matchesPlayed: Number(matches)})}} className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md space-y-4">
-                        <h3 className="font-bold text-lg">Edit Player</h3>
-                        <input value={name} onChange={e=>setName(e.target.value)} className="w-full border p-2 rounded" placeholder="Name" required />
-                        <select value={role} onChange={e=>setRole(e.target.value)} className="w-full border p-2 rounded">
-                            <option value="Striker">Striker</option><option value="Midfielder">Midfielder</option><option value="Defender">Defender</option>
-                        </select>
-                        <div className="flex space-x-2">
-                            <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="w-full border p-2 rounded" placeholder="Elo" />
-                            <input type="number" value={matches} onChange={e=>setMatches(e.target.value)} className="w-full border p-2 rounded" placeholder="Matches" />
-                        </div>
-                        <div className="flex justify-end space-x-2">
-                            <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
-                            <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
-                        </div>
-                    </form>
-                </div>
-            );
-        };
-
-        const LogMatchForm = ({ players, onLogMatch }) => {
-            const [teamA, setTeamA] = useState([]);
-            const [teamB, setTeamB] = useState([]);
-            const [scoreA, setScoreA] = useState(0);
-            const [scoreB, setScoreB] = useState(0);
-            const [isTournament, setIsTournament] = useState(false);
-
-            const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
-
-            const addPlayer = (p, team) => {
-                const entry = { ...p, matchGoals: 0, matchAssists: 0 };
-                if(team==='A') setTeamA(prev => [...prev, entry]);
-                else setTeamB(prev => [...prev, entry]);
-            };
-
-            const updateStat = (id, team, field, delta) => {
-                const updateFn = (list) => list.map(p => {
-                    if (p.id !== id) return p;
-                    const newVal = Math.max(0, (p[field] || 0) + delta);
-                    if (field === 'matchGoals') {
-                        if (team === 'A') setScoreA(s => Math.max(0, s + delta));
-                        else setScoreB(s => Math.max(0, s + delta));
-                    }
-                    return { ...p, [field]: newVal };
-                });
-                if (team === 'A') setTeamA(updateFn);
-                else setTeamB(updateFn);
-            };
-
-            const teamAEff = getEffectiveElo(teamA, teamB, isTournament);
-            const teamBEff = getEffectiveElo(teamB, teamA, isTournament);
-            const predictedWinProb = teamA.length && teamB.length ? (calculateExpectedScore(teamAEff, teamBEff) * 100).toFixed(1) : '50.0';
-
-            return (
-                <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        {/* Available List */}
-                        <div className="bg-gray-100 p-2 rounded max-h-64 overflow-y-auto md:order-2">
-                            <p className="text-xs font-bold text-gray-500 mb-2">AVAILABLE</p>
-                            {available.map(p => (
-                                <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
-                                    <span className="truncate w-24">{p.name}</span>
-                                    <div className="flex space-x-1">
-                                        <button onClick={()=>addPlayer(p,'A')} className="px-1 bg-blue-100 text-blue-600 text-xs rounded">+Blu</button>
-                                        <button onClick={()=>addPlayer(p,'B')} className="px-1 bg-red-100 text-red-600 text-xs rounded">+Red</button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        
-                        {/* Team A */}
-                        <div className="bg-blue-50 p-2 rounded md:order-1">
-                            <h4 className="font-bold text-blue-800 text-center">Blue ({scoreA})</h4>
-                            {teamA.map(p => (
-                                <div key={p.id} className="bg-white p-2 my-1 rounded shadow-sm text-sm">
-                                    <div className="flex justify-between font-bold">
-                                        <span>{p.name}</span>
-                                        <button onClick={()=>setTeamA(t=>t.filter(x=>x.id!==p.id))} className="text-red-400">×</button>
-                                    </div>
-                                    <div className="flex items-center justify-between mt-1 text-xs">
-                                        <div className="flex items-center space-x-1">
-                                            <span className="text-gray-400">G:</span>
-                                            <button onClick={()=>updateStat(p.id,'A','matchGoals',-1)} className="bg-gray-100 w-4 rounded">-</button>
-                                            <span>{p.matchGoals}</span>
-                                            <button onClick={()=>updateStat(p.id,'A','matchGoals',1)} className="bg-blue-100 text-blue-600 w-4 rounded">+</button>
-                                        </div>
-                                        <div className="flex items-center space-x-1">
-                                            <span className="text-gray-400">A:</span>
-                                            <button onClick={()=>updateStat(p.id,'A','matchAssists',-1)} className="bg-gray-100 w-4 rounded">-</button>
-                                            <span>{p.matchAssists}</span>
-                                            <button onClick={()=>updateStat(p.id,'A','matchAssists',1)} className="bg-green-100 text-green-600 w-4 rounded">+</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Team B */}
-                        <div className="bg-red-50 p-2 rounded md:order-3">
-                            <h4 className="font-bold text-red-800 text-center">Red ({scoreB})</h4>
-                            {teamB.map(p => (
-                                <div key={p.id} className="bg-white p-2 my-1 rounded shadow-sm text-sm">
-                                    <div className="flex justify-between font-bold">
-                                        <span>{p.name}</span>
-                                        <button onClick={()=>setTeamB(t=>t.filter(x=>x.id!==p.id))} className="text-red-400">×</button>
-                                    </div>
-                                    <div className="flex items-center justify-between mt-1 text-xs">
-                                        <div className="flex items-center space-x-1">
-                                            <span className="text-gray-400">G:</span>
-                                            <button onClick={()=>updateStat(p.id,'B','matchGoals',-1)} className="bg-gray-100 w-4 rounded">-</button>
-                                            <span>{p.matchGoals}</span>
-                                            <button onClick={()=>updateStat(p.id,'B','matchGoals',1)} className="bg-red-100 text-red-600 w-4 rounded">+</button>
-                                        </div>
-                                        <div className="flex items-center space-x-1">
-                                            <span className="text-gray-400">A:</span>
-                                            <button onClick={()=>updateStat(p.id,'B','matchAssists',-1)} className="bg-gray-100 w-4 rounded">-</button>
-                                            <span>{p.matchAssists}</span>
-                                            <button onClick={()=>updateStat(p.id,'B','matchAssists',1)} className="bg-green-100 text-green-600 w-4 rounded">+</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Summary & Submit */}
-                    <div className="bg-white p-4 rounded shadow space-y-3">
-                        <div className="flex justify-between items-center p-2 bg-gray-100 rounded-lg text-sm">
-                            <span>Win Prob (Blue): <span className={`font-bold ${teamAEff > teamBEff ? 'text-blue-600' : 'text-red-600'}`}>{predictedWinProb}%</span></span>
-                        </div>
-                        
-                        <div className="flex items-center justify-center space-x-2 bg-yellow-50 p-2 rounded text-sm">
-                            <input type="checkbox" checked={isTournament} onChange={e=>setIsTournament(e.target.checked)} className="w-4 h-4 text-blue-600" />
-                            <span className="select-none">Tournament / Friendly (Equal Field)</span>
-                        </div>
-                        <div className="flex space-x-2">
-                            <input type="number" value={scoreA} onChange={e=>setScoreA(Number(e.target.value))} className="flex-1 border p-2 text-center text-2xl rounded" placeholder="Blue" />
-                            <input type="number" value={scoreB} onChange={e=>setScoreB(Number(e.target.value))} className="flex-1 border p-2 text-center text-2xl rounded" placeholder="Red" />
-                        </div>
-                        <button 
-                            onClick={() => onLogMatch(teamA, teamB, scoreA, scoreB, isTournament)}
-                            disabled={teamA.length===0 || teamB.length===0}
-                            className="w-full bg-green-600 text-white font-bold py-3 rounded shadow disabled:bg-gray-300">
-                            Confirm Match & Update Ratings
-                        </button>
-                    </div>
-                </div>
-            );
-        };
-
-        const PlayerItem = ({ player, rank, isAdmin, onEdit, onDelete }) => (
-            <div className={`flex justify-between items-center p-3 my-1 rounded-lg transition-all shadow-md ${rank <= 3 ? 'bg-amber-100 border-yellow-500' : 'bg-white border-gray-200'}`}>
-                <div className="flex items-center space-x-3 overflow-hidden">
-                    <span className={`font-bold w-6 ${rank<=3?'text-yellow-600':'text-gray-400'}`}>{rank}.</span>
-                    <div className="flex flex-col">
-                        <span className="font-semibold text-gray-800 truncate">{player.name}</span>
-                        <span className="text-[10px] text-gray-400 uppercase">{player.role}</span>
-                    </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <div className="text-right mr-2">
-                        <span className="text-xl font-extrabold text-blue-600">{player.elo}</span>
-                        <span className="text-xs text-gray-500 block">({player.matchesPlayed} matches)</span>
-                    </div>
-                    {isAdmin && (
-                        <div className="flex space-x-1">
-                            <button onClick={() => onEdit(player)} className="p-2 text-gray-400 hover:text-blue-600">✎</button>
-                            <button onClick={() => onDelete(player.id, player.name)} className="p-2 text-gray-400 hover:text-red-600">×</button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-
-        // --- MAIN APP ---
+        // --- COMPONENTS ---
 
         function App() {
             const [db, setDb] = useState(null);
             const [auth, setAuth] = useState(null);
             const [user, setUser] = useState(null); 
-            
             const [players, setPlayers] = useState([]);
-            const [history, setHistory] = useState([]); 
-            
             const [activeTab, setActiveTab] = useState('leaderboard');
+            
+            // UI States
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
             const [editingPlayer, setEditingPlayer] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
@@ -410,6 +92,7 @@
 
             const isAdmin = useMemo(() => user && ADMIN_EMAILS.some(email => email.toLowerCase() === user.email.toLowerCase()), [user]);
 
+            // --- INIT ---
             useEffect(() => {
                 if (!window.firebase) { setError("Firebase SDK missing."); setIsLoading(false); return; }
                 try {
@@ -420,73 +103,78 @@
                 } catch (e) { setError("Init Failed: " + e.message); setIsLoading(false); }
             }, []);
 
+            // --- DATA LISTENER (SAFE LOADING) ---
             useEffect(() => {
                 if (!db) return;
-                
-                // Fetch Players
-                const playerUnsub = window.firebase.onSnapshot(
-                    window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/players`)),
-                    (snap) => {
-                        const loaded = snap.docs.map(d => ({ 
-                            id: d.id, 
-                            ...d.data(),
-                            // Ensure defaults for new fields to prevent crashes
-                            role: d.data().role || 'Midfielder',
-                            goals: d.data().goals || 0,
-                            assists: d.data().assists || 0,
-                            cleanSheets: d.data().cleanSheets || 0
-                        }));
-                        setPlayers(loaded);
-                    },
-                    (err) => { console.error("Data Load Error:", err); setError("Error loading data."); }
-                );
-
-                // Fetch History
-                const historyUnsub = window.firebase.onSnapshot(
-                    window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/history`)),
-                    (snap) => setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-                );
-
-                return () => { playerUnsub(); historyUnsub(); };
+                const q = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
+                const unsub = window.firebase.onSnapshot(q, (snap) => {
+                    const loaded = snap.docs.map(d => {
+                        const data = d.data();
+                        // SAFE DEFAULTS: If fields are missing (old database), default them to 0 or 'Midfielder'
+                        return {
+                            id: d.id,
+                            name: data.name || "Unknown",
+                            elo: Number(data.elo) || INITIAL_ELO,
+                            matchesPlayed: Number(data.matchesPlayed) || 0,
+                            role: data.role || "Midfielder",
+                            goals: Number(data.goals) || 0,
+                            assists: Number(data.assists) || 0,
+                            cleanSheets: Number(data.cleanSheets) || 0
+                        };
+                    });
+                    setPlayers(loaded);
+                }, (err) => { console.error(err); setError("Error loading data."); });
+                return () => unsub();
             }, [db]);
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            const handleExportData = () => {
-                const backup = { players, history, exportDate: new Date().toISOString() };
-                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+            // --- BACKUP & RESTORE ---
+            const handleExport = () => {
+                const dataStr = JSON.stringify(players, null, 2);
+                const blob = new Blob([dataStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.download = `elo-backup-${new Date().toISOString().split('T')[0]}.json`;
+                link.href = url;
+                link.download = `soccer-backup-${new Date().toISOString().split('T')[0]}.json`;
                 document.body.appendChild(link); link.click(); document.body.removeChild(link);
             };
 
-            const handleImportData = async (e) => {
+            const handleImport = async (e) => {
                 const file = e.target.files[0];
-                if (!file || !confirm("⚠️ DANGER: This will WIPE current data (Players AND History) and replace it with the backup. Continue?")) return;
+                if (!file || !confirm("WARNING: This will DELETE all current players and REPLACE them with the backup file. Continue?")) return;
+                
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
-                        const data = JSON.parse(ev.target.result);
+                        const importedData = JSON.parse(ev.target.result);
+                        if (!Array.isArray(importedData)) throw new Error("Invalid Backup File");
+                        
                         setIsLoading(true);
                         const batch = window.firebase.writeBatch(db);
+                        const colRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
                         
-                        const pRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
-                        (await window.firebase.getDocs(pRef)).forEach(d => batch.delete(d.ref));
-                        (data.players || []).forEach(p => { const { id, ...rest } = p; batch.set(window.firebase.doc(pRef, id), rest); });
+                        // 1. Delete All
+                        const snapshot = await window.firebase.getDocs(colRef);
+                        snapshot.forEach(doc => batch.delete(doc.ref));
 
-                        const hRef = window.firebase.collection(db, `artifacts/${appId}/public/data/history`);
-                        (await window.firebase.getDocs(hRef)).forEach(d => batch.delete(d.ref));
-                        (data.history || []).forEach(h => { const { id, ...rest } = h; batch.set(window.firebase.doc(hRef, id), rest); });
+                        // 2. Add All
+                        importedData.forEach(p => {
+                            if(p.id && p.name) {
+                                const { id, ...data } = p;
+                                batch.set(window.firebase.doc(colRef, id), data);
+                            }
+                        });
 
                         await batch.commit();
-                        alert("✅ System Restored Successfully.");
-                    } catch (err) { alert("Import Failed: " + err.message); } 
+                        alert("Database Restored!");
+                    } catch (err) { alert("Error: " + err.message); } 
                     finally { setIsLoading(false); e.target.value = null; }
                 };
                 reader.readAsText(file);
             };
 
+            // --- ACTIONS ---
             const handleAddPlayer = async (name, role, elo) => {
                 if (!db) return;
                 const newPlayer = {
@@ -498,126 +186,281 @@
                 setIsAddingPlayer(false);
             };
 
-            const handleUpdatePlayer = async (id, data) => {
-                await window.firebase.updateDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/players`, id), data);
+            const handleUpdatePlayer = async (id, updates) => {
+                await window.firebase.updateDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/players`, id), updates);
                 setEditingPlayer(null);
             };
 
             const handleDeletePlayer = async (id) => {
-                if(confirm("Permanently delete player?")) await window.firebase.deleteDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/players`, id));
+                if(confirm("Delete player?")) await window.firebase.deleteDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/players`, id));
             };
 
-            const handleLogMatch = async (teamA, teamB, scoreA, scoreB, isTournamentMode) => {
+            const handleLogMatch = async (teamA, teamB, scoreA, scoreB) => {
                 if (!db) return;
                 
-                const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
-                const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
-                let sA, sB;
-                if (scoreA > scoreB) { sA = 1; sB = 0; } else if (scoreA < scoreB) { sA = 0; sB = 1; } else { sA = 0.5; sB = 0.5; }
+                // Elo Math (Simplified: Equal Field Assumption for now)
+                const avgA = teamA.reduce((s,p)=>s+p.elo,0)/teamA.length;
+                const avgB = teamB.reduce((s,p)=>s+p.elo,0)/teamB.length;
+                const expA = calculateExpectedScore(avgA, avgB);
                 
-                const eA = calculateExpectedScore(teamAEff, teamBEff);
-                const m = isTournamentMode ? 1 : getMarginMultiplier(Math.abs(scoreA - scoreB));
-                
-                const totalSize = teamA.length + teamB.length;
-                const scaleA = (2 * teamB.length) / totalSize;
-                const scaleB = (2 * teamA.length) / totalSize;
+                let resA, resB;
+                if(scoreA > scoreB) { resA=1; resB=0; }
+                else if (scoreA < scoreB) { resA=0; resB=1; }
+                else { resA=0.5; resB=0.5; }
 
+                const margin = getMarginMultiplier(Math.abs(scoreA - scoreB));
                 const batch = window.firebase.writeBatch(db);
 
                 [...teamA, ...teamB].forEach(p => {
                     const isA = teamA.some(x => x.id === p.id);
-                    const S = isA ? sA : sB;
-                    const E = isA ? eA : (1 - eA);
-                    const scale = isA ? scaleA : scaleB;
-                    const K = getKFactor(p.matchesPlayed);
+                    const actual = isA ? resA : resB;
+                    const exp = isA ? expA : (1-expA);
                     
-                    const eloChange = Math.round(K * m * (S - E) * scale);
+                    // Elo Change
+                    const k = getKFactor(p.matchesPlayed);
+                    const change = Math.round(k * margin * (actual - exp));
                     
-                    const newGoals = (p.goals || 0) + (p.matchGoals || 0);
-                    const newAssists = (p.assists || 0) + (p.matchAssists || 0);
+                    // Stats Update
+                    // We check if "matchGoals" or "matchAssists" exists on the player object passed from the form
+                    const addedGoals = p.matchGoals || 0;
+                    const addedAssists = p.matchAssists || 0;
+                    
+                    // Clean Sheet Check
                     const opponentScore = isA ? scoreB : scoreA;
-                    const isCleanSheet = opponentScore === 0;
-                    const newCleanSheets = (p.cleanSheets || 0) + (isCleanSheet ? 1 : 0);
+                    const gotCleanSheet = (opponentScore === 0) ? 1 : 0;
 
                     const ref = window.firebase.doc(db, `artifacts/${appId}/public/data/players`, p.id);
                     batch.update(ref, {
-                        elo: p.elo + eloChange,
+                        elo: p.elo + change,
                         matchesPlayed: p.matchesPlayed + 1,
-                        goals: newGoals,
-                        assists: newAssists,
-                        cleanSheets: newCleanSheets
+                        goals: (p.goals || 0) + addedGoals,
+                        assists: (p.assists || 0) + addedAssists,
+                        cleanSheets: (p.cleanSheets || 0) + gotCleanSheet
                     });
                 });
 
-                const historyRef = window.firebase.doc(window.firebase.collection(db, `artifacts/${appId}/public/data/history`));
-                batch.set(historyRef, {
-                    timestamp: new Date().toISOString(),
-                    scoreA, scoreB,
-                    teamA: teamA.map(p => ({ name: p.name, goals: p.matchGoals, assists: p.matchAssists })),
-                    teamB: teamB.map(p => ({ name: p.name, goals: p.matchGoals, assists: p.matchAssists })),
-                    isTournamentMode
-                });
-
                 await batch.commit();
+                alert("Match Saved!");
                 setActiveTab('leaderboard');
             };
 
+            // --- UI SUB-COMPONENTS ---
+
+            const PlayerRow = ({ p, i }) => (
+                <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm border mb-2">
+                    <div className="flex items-center space-x-3">
+                        <span className={`font-bold w-6 ${i<3 ? 'text-yellow-600':'text-gray-400'}`}>{i+1}.</span>
+                        <div>
+                            <p className="font-bold text-gray-800">{p.name}</p>
+                            <p className="text-[10px] text-gray-400 uppercase">{p.role}</p>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <p className="font-black text-blue-600">{p.elo}</p>
+                        <p className="text-xs text-gray-400">{p.matchesPlayed} games</p>
+                    </div>
+                    {isAdmin && (
+                        <div className="ml-2 flex space-x-1">
+                            <button onClick={()=>setEditingPlayer(p)} className="text-gray-300 hover:text-blue-500">✎</button>
+                            <button onClick={()=>handleDeletePlayer(p.id)} className="text-gray-300 hover:text-red-500">×</button>
+                        </div>
+                    )}
+                </div>
+            );
+
+            const EditModal = () => {
+                if (!editingPlayer) return null;
+                const [form, setForm] = useState({...editingPlayer});
+                
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-lg p-6 w-full max-w-sm space-y-3">
+                            <h3 className="font-bold">Edit Player</h3>
+                            <input className="w-full border p-2 rounded" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} placeholder="Name" />
+                            <select className="w-full border p-2 rounded" value={form.role} onChange={e=>setForm({...form, role:e.target.value})}>
+                                <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                            </select>
+                            <div className="flex space-x-2">
+                                <div className="flex-1">
+                                    <label className="text-xs">Elo</label>
+                                    <input type="number" className="w-full border p-2 rounded" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-xs">Matches</label>
+                                    <input type="number" className="w-full border p-2 rounded" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} />
+                                </div>
+                            </div>
+                            {/* Manual Stat Corrections */}
+                            <div className="grid grid-cols-3 gap-2">
+                                <div><label className="text-xs">Goals</label><input type="number" className="w-full border p-1 rounded text-sm" value={form.goals} onChange={e=>setForm({...form, goals:Number(e.target.value)})} /></div>
+                                <div><label className="text-xs">Assists</label><input type="number" className="w-full border p-1 rounded text-sm" value={form.assists} onChange={e=>setForm({...form, assists:Number(e.target.value)})} /></div>
+                                <div><label className="text-xs">CleanShts</label><input type="number" className="w-full border p-1 rounded text-sm" value={form.cleanSheets} onChange={e=>setForm({...form, cleanSheets:Number(e.target.value)})} /></div>
+                            </div>
+                            <div className="flex justify-end space-x-2 pt-2">
+                                <button onClick={()=>setEditingPlayer(null)} className="px-3 py-1 bg-gray-200 rounded">Cancel</button>
+                                <button onClick={()=>handleUpdatePlayer(editingPlayer.id, form)} className="px-3 py-1 bg-blue-600 text-white rounded">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const LogMatchView = () => {
+                const [teamA, setTeamA] = useState([]);
+                const [teamB, setTeamB] = useState([]);
+                const [scoreA, setScoreA] = useState(0);
+                const [scoreB, setScoreB] = useState(0);
+
+                const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
+
+                const addToTeam = (p, team) => {
+                    const entry = { ...p, matchGoals: 0, matchAssists: 0 };
+                    if(team==='A') setTeamA([...teamA, entry]);
+                    else setTeamB([...teamB, entry]);
+                };
+
+                const updateMatchStat = (id, team, field, delta) => {
+                    const updateList = (list) => list.map(p => {
+                        if (p.id !== id) return p;
+                        const val = Math.max(0, p[field] + delta);
+                        // Auto-score logic
+                        if(field === 'matchGoals') {
+                            if(team==='A') setScoreA(prev => Math.max(0, prev + (val - p.matchGoals)));
+                            else setScoreB(prev => Math.max(0, prev + (val - p.matchGoals)));
+                        }
+                        return { ...p, [field]: val };
+                    });
+                    if(team==='A') setTeamA(updateList(teamA));
+                    else setTeamB(updateList(teamB));
+                };
+
+                const TeamCard = ({ title, list, teamKey, score, setScore }) => (
+                    <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
+                        <div className="flex justify-between items-center mb-2">
+                            <h3 className={`font-bold ${teamKey==='A'?'text-blue-700':'text-red-700'}`}>{title}</h3>
+                            <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold" />
+                        </div>
+                        {list.map(p => (
+                            <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
+                                <div className="flex justify-between font-bold">
+                                    <span>{p.name}</span>
+                                    <button onClick={()=>{
+                                        if(teamKey==='A') setTeamA(teamA.filter(x=>x.id!==p.id));
+                                        else setTeamB(teamB.filter(x=>x.id!==p.id));
+                                    }} className="text-gray-300 hover:text-red-500">×</button>
+                                </div>
+                                {/* GOAL/ASSIST BUTTONS */}
+                                <div className="flex space-x-3 mt-1 text-xs">
+                                    <div className="flex items-center space-x-1">
+                                        <span className="text-gray-400 font-bold">G</span>
+                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchGoals', -1)} className="bg-gray-100 px-1 rounded">-</button>
+                                        <span className="w-3 text-center font-bold">{p.matchGoals}</span>
+                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchGoals', 1)} className="bg-blue-100 text-blue-600 px-1 rounded">+</button>
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                        <span className="text-gray-400 font-bold">A</span>
+                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchAssists', -1)} className="bg-gray-100 px-1 rounded">-</button>
+                                        <span className="w-3 text-center font-bold">{p.matchAssists}</span>
+                                        <button onClick={()=>updateMatchStat(p.id, teamKey, 'matchAssists', 1)} className="bg-green-100 text-green-600 px-1 rounded">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                );
+
+                return (
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div className="bg-gray-100 p-2 rounded max-h-60 overflow-y-auto md:order-2">
+                                <p className="text-xs font-bold text-gray-500 mb-2">ROSTER</p>
+                                {available.map(p => (
+                                    <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
+                                        <span>{p.name}</span>
+                                        <div className="space-x-1">
+                                            <button onClick={()=>addToTeam(p,'A')} className="text-xs bg-blue-100 text-blue-600 px-1 rounded">+Blu</button>
+                                            <button onClick={()=>addToTeam(p,'B')} className="text-xs bg-red-100 text-red-600 px-1 rounded">+Red</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="md:order-1"><TeamCard title="Blue Team" list={teamA} teamKey="A" score={scoreA} setScore={setScoreA} /></div>
+                            <div className="md:order-3"><TeamCard title="Red Team" list={teamB} teamKey="B" score={scoreB} setScore={setScoreB} /></div>
+                        </div>
+                        <button onClick={()=>handleLogMatch(teamA, teamB, scoreA, scoreB)} disabled={teamA.length===0} className="w-full py-3 bg-green-600 text-white font-bold rounded shadow">Update Ratings</button>
+                    </div>
+                );
+            };
+
+            // --- RENDER ---
             if (isLoading) return <div className="flex h-screen items-center justify-center"><div className="animate-spin h-10 w-10 border-4 border-blue-500 rounded-full border-t-transparent"></div></div>;
 
             return (
-                <div className="min-h-screen bg-gray-50 flex flex-col max-w-4xl mx-auto shadow-xl">
+                <div className="min-h-screen bg-gray-50 flex flex-col max-w-2xl mx-auto shadow-lg">
                     <header className="bg-white p-4 border-b sticky top-0 z-10">
-                        <div className="flex justify-between items-center mb-4">
-                            <h1 className="text-xl font-black text-blue-600 tracking-tighter">BSA-UA<span className="text-green-500">League</span></h1>
-                            <div className="text-right">
+                        <div className="flex justify-between items-center mb-2">
+                            <h1 className="text-xl font-black text-blue-600 tracking-tighter">ELO<span className="text-green-500">Manager</span></h1>
+                            <div className="text-xs text-right">
                                 {user ? (
-                                    <div className="flex items-center space-x-2">
-                                        <div className="text-xs text-right"><p>{user.email}</p>{isAdmin && <p className="text-red-500 font-bold">ADMIN</p>}</div>
-                                        <button onClick={handleLogout} className="text-xs underline">Out</button>
+                                    <div>
+                                        <p>{user.email}</p>
+                                        <button onClick={handleLogout} className="underline text-red-500">Sign Out</button>
                                     </div>
-                                ) : (
-                                    <button onClick={handleGoogleLogin} className="text-sm bg-gray-100 px-3 py-1 rounded">Sign In</button>
-                                )}
+                                ) : <button onClick={handleGoogleLogin} className="bg-gray-100 px-2 py-1 rounded">Sign In</button>}
                             </div>
                         </div>
-                        <div className="flex space-x-4 border-b">
-                            {['leaderboard', 'stats', 'history', 'logMatch'].map(tab => (
-                                (!isAdmin && tab === 'logMatch') ? null :
-                                <button key={tab} onClick={() => setActiveTab(tab)} className={`pb-2 text-sm font-bold capitalize ${activeTab === tab ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-400'}`}>
-                                    {tab === 'logMatch' ? 'Log Match' : tab}
-                                </button>
-                            ))}
+                        <div className="flex space-x-4">
+                            <button onClick={()=>setActiveTab('leaderboard')} className={`font-bold pb-1 ${activeTab==='leaderboard'?'border-b-2 border-blue-500':''}`}>Rankings</button>
+                            {isAdmin && <button onClick={()=>setActiveTab('logMatch')} className={`font-bold pb-1 ${activeTab==='logMatch'?'border-b-2 border-blue-500':''}`}>Log Match</button>}
                         </div>
                     </header>
 
                     <main className="flex-grow p-4">
-                        {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
-                        
+                        {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-2 text-sm">{error}</div>}
+                        <EditModal />
+
                         {activeTab === 'leaderboard' && (
                             <div>
                                 {isAdmin && (
                                     <div className="flex justify-end space-x-2 mb-4">
-                                        <button onClick={handleExportData} className="text-xs bg-gray-200 px-2 py-1 rounded">Save Backup</button>
-                                        <button onClick={() => fileInputRef.current.click()} className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">Restore</button>
-                                        <input type="file" ref={fileInputRef} onChange={handleImportData} className="hidden" accept=".json" />
-                                        <button onClick={() => setIsAddingPlayer(true)} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">+ Add Player</button>
+                                        <button onClick={handleExport} className="text-xs bg-gray-200 px-2 py-1 rounded">Backup</button>
+                                        <button onClick={()=>fileInputRef.current.click()} className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded">Restore</button>
+                                        <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" />
+                                        <button onClick={()=>setIsAddingPlayer(true)} className="text-xs bg-blue-600 text-white px-2 py-1 rounded">+ Add</button>
                                     </div>
                                 )}
-                                {isAddingPlayer && <AddPlayerForm onAdd={handleAddPlayer} onCancel={() => setIsAddingPlayer(false)} />}
-                                {editingPlayer && <EditPlayerForm player={editingPlayer} onSave={handleUpdatePlayer} onCancel={()=>setEditingPlayer(null)} />}
                                 
-                                <div className="space-y-2">
-                                    {sortedPlayers.map((p, i) => (
-                                        <PlayerItem key={p.id} player={p} rank={i + 1} isAdmin={isAdmin} onEdit={setEditingPlayer} onDelete={handleDeletePlayer} />
-                                    ))}
-                                    {sortedPlayers.length === 0 && <p className="text-center text-gray-400 py-10">No players yet.</p>}
+                                {isAddingPlayer && (
+                                    <div className="bg-white p-3 rounded shadow mb-3">
+                                        <form onSubmit={(e)=>{
+                                            e.preventDefault();
+                                            const fd = new FormData(e.target);
+                                            handleAddPlayer(fd.get('name'), fd.get('role'), fd.get('elo'));
+                                        }}>
+                                            <div className="flex space-x-2 mb-2">
+                                                <input name="name" className="border p-1 rounded flex-1" placeholder="Name" required />
+                                                <select name="role" className="border p-1 rounded">
+                                                    <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <input name="elo" type="number" defaultValue="1500" className="border p-1 rounded w-20" />
+                                                <div className="space-x-2">
+                                                    <button type="button" onClick={()=>setIsAddingPlayer(false)} className="text-gray-500">Cancel</button>
+                                                    <button type="submit" className="bg-blue-600 text-white px-3 rounded">Save</button>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                )}
+
+                                <div>
+                                    {sortedPlayers.map((p, i) => <PlayerRow key={p.id} p={p} i={i} />)}
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'stats' && <StatsTab players={players} />}
-                        {activeTab === 'history' && <HistoryTab history={history} />}
-                        {activeTab === 'logMatch' && isAdmin && <LogMatchForm players={players} onLogMatch={handleLogMatch} />}
+                        {activeTab === 'logMatch' && isAdmin && <LogMatchView />}
                     </main>
                 </div>
             );
