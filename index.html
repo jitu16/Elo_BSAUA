@@ -12,7 +12,6 @@
         .animate-spin { animation: spin 1s linear infinite; }
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        /* Sortable Header Styles */
         th.sortable { cursor: pointer; user-select: none; transition: background-color 0.2s; }
         th.sortable:hover { background-color: #f3f4f6; }
     </style>
@@ -59,11 +58,8 @@
         const firebaseConfig = ELO_FIREBASE_CONFIG_JSON; 
         
         const INITIAL_ELO = 1500;
-        const K_INITIAL = 80; 
-        const K_MIDDLE = 40;
-        const K_STABLE = 20; 
-        const MATCH_CUTOFF_INITIAL = 10;
-        const MATCH_CUTOFF_MIDDLE = 30;
+        const K_INITIAL = 80; const K_MIDDLE = 40; const K_STABLE = 20; 
+        const MATCH_CUTOFF_INITIAL = 10; const MATCH_CUTOFF_MIDDLE = 30;
 
         // --- Helper Functions ---
         const getEffectiveElo = (teamPlayers, opponentPlayers, isTournamentMode) => {
@@ -71,16 +67,12 @@
             const avgElo = teamPlayers.reduce((sum, p) => sum + p.elo, 0) / teamPlayers.length;
             if (isTournamentMode) return avgElo;
             if (teamPlayers.length > opponentPlayers.length && opponentPlayers.length > 0) {
-                const ratio = teamPlayers.length / opponentPlayers.length;
-                return avgElo * ratio; 
+                return avgElo * (teamPlayers.length / opponentPlayers.length); 
             }
             return avgElo;
         };
 
-        const calculateExpectedScore = (teamAElo, teamBElo) => {
-            const ratingDiff = teamAElo - teamBElo;
-            return 1 / (1 + Math.pow(10, -ratingDiff / 400));
-        };
+        const calculateExpectedScore = (teamAElo, teamBElo) => 1 / (1 + Math.pow(10, -(teamAElo - teamBElo) / 400));
 
         const getKFactor = (matchesPlayed) => {
             if (matchesPlayed < MATCH_CUTOFF_INITIAL) return K_INITIAL;
@@ -89,12 +81,266 @@
         };
 
         const getMarginMultiplier = (goalDifference) => {
-            if (goalDifference === 0) return 1;
-            if (goalDifference === 1) return 1;
+            if (goalDifference <= 1) return 1;
             if (goalDifference === 2) return 1.5;
             if (goalDifference === 3) return 2;
             return 2.5;
         };
+
+        // --- SUB-COMPONENTS ---
+
+        const StatsTab = ({ players }) => {
+            const [filters, setFilters] = useState({ Striker: true, Midfielder: true, Defender: true });
+            const [sortConfig, setSortConfig] = useState({ key: 'elo', direction: 'desc' });
+
+            const safePlayers = Array.isArray(players) ? players.filter(p => p && p.name) : [];
+            const filtered = safePlayers.filter(p => filters[p.role || 'Midfielder']);
+
+            const sorted = [...filtered].sort((a, b) => {
+                const valA = Number(a[sortConfig.key] || 0);
+                const valB = Number(b[sortConfig.key] || 0);
+                return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
+            });
+
+            const requestSort = (key) => {
+                let direction = 'desc';
+                if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc';
+                setSortConfig({ key, direction });
+            };
+
+            const SortIcon = ({ col }) => {
+                if (sortConfig.key !== col) return <span className="text-gray-300 ml-1 text-[10px]">▼</span>;
+                return <span className="text-blue-600 ml-1 text-[10px]">{sortConfig.direction === 'asc' ? '▲' : '▼'}</span>;
+            };
+
+            return (
+                <div className="space-y-4">
+                    <div className="flex justify-center space-x-6 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
+                        {['Striker', 'Midfielder', 'Defender'].map(role => (
+                            <label key={role} className="flex items-center space-x-2 cursor-pointer select-none">
+                                <input type="checkbox" checked={filters[role]} onChange={() => setFilters({...filters, [role]: !filters[role]})} className="accent-blue-600" />
+                                <span className={`text-sm font-bold ${filters[role] ? 'text-gray-700' : 'text-gray-400'}`}>{role}</span>
+                            </label>
+                        ))}
+                    </div>
+                    <div className="bg-white rounded-xl shadow-md overflow-x-auto border border-gray-100">
+                        <table className="min-w-full text-xs sm:text-sm">
+                            <thead className="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th className="p-3 text-left font-bold text-gray-600">Player</th>
+                                    <th onClick={() => requestSort('elo')} className="sortable p-3 text-center font-bold text-gray-700 bg-gray-100">Elo<SortIcon col="elo"/></th>
+                                    <th onClick={() => requestSort('matchesPlayed')} className="sortable p-3 text-center font-bold text-gray-700">M<SortIcon col="matchesPlayed"/></th>
+                                    <th onClick={() => requestSort('goals')} className="sortable p-3 text-center font-bold text-gray-700">G<SortIcon col="goals"/></th>
+                                    <th onClick={() => requestSort('assists')} className="sortable p-3 text-center font-bold text-gray-700">A<SortIcon col="assists"/></th>
+                                    {/* NEW: Goals For / Goals Against */}
+                                    <th onClick={() => requestSort('goalsFor')} className="sortable p-3 text-center font-bold text-green-700 bg-green-50">GF<SortIcon col="goalsFor"/></th>
+                                    <th onClick={() => requestSort('goalsAgainst')} className="sortable p-3 text-center font-bold text-red-700 bg-red-50">GA<SortIcon col="goalsAgainst"/></th>
+                                    <th onClick={() => requestSort('cleanSheets')} className="sortable p-3 text-center font-bold text-gray-700">CS<SortIcon col="cleanSheets"/></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {sorted.map((p, i) => (
+                                    <tr key={p.id || i} className="hover:bg-blue-50 transition-colors">
+                                        <td className="p-3 font-medium">
+                                            <div className="text-gray-900">{p.name}</div>
+                                            <div className="text-[9px] text-gray-400 uppercase tracking-wider">{p.role}</div>
+                                        </td>
+                                        <td className="p-3 text-center font-bold text-blue-600 bg-gray-50">{p.elo}</td>
+                                        <td className="p-3 text-center text-gray-600">{p.matchesPlayed}</td>
+                                        <td className="p-3 text-center text-gray-600">{p.goals || 0}</td>
+                                        <td className="p-3 text-center text-gray-600">{p.assists || 0}</td>
+                                        <td className="p-3 text-center font-bold text-green-600 bg-green-50">{p.goalsFor || 0}</td>
+                                        <td className="p-3 text-center font-bold text-red-600 bg-red-50">{p.goalsAgainst || 0}</td>
+                                        <td className="p-3 text-center text-gray-600">{p.cleanSheets || 0}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        };
+
+        const EditPlayerForm = ({ player, onSave, onCancel }) => {
+            const [form, setForm] = useState({...player});
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+                        <h3 className="font-bold text-lg mb-4">Edit Player</h3>
+                        <form onSubmit={(e)=>{e.preventDefault(); onSave(player.id, form);}} className="space-y-4">
+                            <input value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full border p-2 rounded" placeholder="Name" required />
+                            <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})} className="w-full border p-2 rounded">
+                                <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                            </select>
+                            <div className="flex space-x-2">
+                                <div className="flex-1"><label className="text-xs font-bold">Elo</label><input type="number" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
+                                <div className="flex-1"><label className="text-xs font-bold">Matches</label><input type="number" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
+                            </div>
+                            {/* Manual Edit for GF/GA */}
+                            <div className="grid grid-cols-4 gap-2 bg-gray-50 p-2 rounded text-center">
+                                <div><label className="text-[10px] font-bold">G</label><input type="number" value={form.goals||0} onChange={e=>setForm({...form, goals:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
+                                <div><label className="text-[10px] font-bold">A</label><input type="number" value={form.assists||0} onChange={e=>setForm({...form, assists:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
+                                <div><label className="text-[10px] font-bold text-green-600">GF</label><input type="number" value={form.goalsFor||0} onChange={e=>setForm({...form, goalsFor:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
+                                <div><label className="text-[10px] font-bold text-red-600">GA</label><input type="number" value={form.goalsAgainst||0} onChange={e=>setForm({...form, goalsAgainst:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
+                            </div>
+                            <div className="flex justify-end space-x-2">
+                                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const LogMatchForm = ({ players, onLogMatch }) => {
+            const [teamA, setTeamA] = useState([]);
+            const [teamB, setTeamB] = useState([]);
+            const [scoreA, setScoreA] = useState(0);
+            const [scoreB, setScoreB] = useState(0);
+            const [isTournamentMode, setIsTournamentMode] = useState(false);
+
+            const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
+
+            const addPlayer = (p, team) => {
+                const entry = { ...p, matchGoals: 0, matchAssists: 0 };
+                if(team==='A') setTeamA([...teamA, entry]); else setTeamB([...teamB, entry]);
+            };
+
+            const updateStat = (id, team, field, delta) => {
+                const updater = list => list.map(p => {
+                    if(p.id !== id) return p;
+                    const val = Math.max(0, (p[field]||0) + delta);
+                    if(field==='matchGoals') {
+                        if(team==='A') setScoreA(s => Math.max(0, s + (val - (p.matchGoals||0))));
+                        else setScoreB(s => Math.max(0, s + (val - (p.matchGoals||0))));
+                    }
+                    return { ...p, [field]: val };
+                });
+                if(team==='A') setTeamA(updater(teamA)); else setTeamB(updater(teamB));
+            };
+
+            const TeamList = ({ list, teamKey, score, setScore }) => (
+                <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
+                    <div className="flex justify-between items-center mb-2">
+                        <span className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>{teamKey==='A'?'Blue':'Red'} ({list.length})</span>
+                        <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold bg-white" />
+                    </div>
+                    {list.map(p => (
+                        <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
+                            <div className="flex justify-between font-medium">
+                                <span>{p.name}</span>
+                                <button onClick={()=> teamKey==='A' ? setTeamA(teamA.filter(x=>x.id!==p.id)) : setTeamB(teamB.filter(x=>x.id!==p.id))} className="text-gray-300 hover:text-red-500 font-bold">×</button>
+                            </div>
+                            <div className="flex space-x-3 mt-1">
+                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
+                                    <span className="text-[10px] font-bold text-gray-400">G</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
+                                    <span className="font-bold w-3 text-center text-xs">{p.matchGoals}</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', 1)} className="text-blue-600 hover:text-blue-800 font-bold px-1">+</button>
+                                </div>
+                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
+                                    <span className="text-[10px] font-bold text-gray-400">A</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
+                                    <span className="font-bold w-3 text-center text-xs">{p.matchAssists}</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', 1)} className="text-green-600 hover:text-green-800 font-bold px-1">+</button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+
+            const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
+            const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
+            const prob = teamA.length && teamB.length ? (calculateExpectedScore(teamAEff, teamBEff)*100).toFixed(1) : '50.0';
+
+            return (
+                <form onSubmit={e=>{e.preventDefault(); onLogMatch(teamA, teamB, scoreA, scoreB, isTournamentMode)}} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div className="bg-gray-100 p-2 rounded max-h-64 overflow-y-auto md:order-2">
+                            <p className="text-xs font-bold text-gray-500 mb-2">ROSTER</p>
+                            {available.map(p => (
+                                <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
+                                    <span className="truncate">{p.name} <span className="text-xs text-gray-400">({p.elo})</span></span>
+                                    <div className="space-x-1">
+                                        <button type="button" onClick={()=>addPlayer(p,'A')} className="text-xs bg-blue-100 text-blue-600 px-1 rounded font-bold">+Blu</button>
+                                        <button type="button" onClick={()=>addPlayer(p,'B')} className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">+Red</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="md:order-1"><TeamList list={teamA} teamKey="A" score={scoreA} setScore={setScoreA} /></div>
+                        <div className="md:order-3"><TeamList list={teamB} teamKey="B" score={scoreB} setScore={setScoreB} /></div>
+                    </div>
+                    <div className="bg-white p-3 rounded shadow space-y-2">
+                        <div className="flex justify-between text-sm"><span>Win Prob (Blue):</span><span className={`font-bold ${teamAEff>teamBEff?'text-blue-600':'text-red-600'}`}>{prob}%</span></div>
+                        <label className="flex items-center space-x-2 text-sm select-none cursor-pointer bg-yellow-50 p-2 rounded">
+                            <input type="checkbox" checked={isTournamentMode} onChange={e=>setIsTournamentMode(e.target.checked)} className="accent-blue-600"/> 
+                            <span className="font-semibold text-gray-700">Tournament Mode (Equal players)</span>
+                        </label>
+                        <button type="submit" disabled={teamA.length===0 || teamB.length===0} className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white font-bold py-3 rounded shadow disabled:bg-gray-300">Update Ratings</button>
+                    </div>
+                </form>
+            );
+        };
+
+        const AddPlayerForm = ({ onAdd, onCancel }) => {
+            const [name, setName] = useState('');
+            const [role, setRole] = useState('Midfielder');
+            const [elo, setElo] = useState(1500);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!name.trim()) return;
+                onAdd(name, role, elo);
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-4">
+                    <h4 className="font-bold mb-2">New Player</h4>
+                    <div className="flex space-x-2 mb-2">
+                        <input value={name} onChange={e=>setName(e.target.value)} className="border p-2 rounded flex-1" placeholder="Name" required />
+                        <select value={role} onChange={e=>setRole(e.target.value)} className="border p-2 rounded">
+                            <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                        </select>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="border p-2 rounded w-24" placeholder="Elo" />
+                        <div className="space-x-2">
+                            <button type="button" onClick={onCancel} className="text-gray-500 text-sm">Cancel</button>
+                            <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold">Add</button>
+                        </div>
+                    </div>
+                </form>
+            );
+        };
+
+        const PlayerItem = ({ player, rank, isAdmin, onEdit, onDelete }) => (
+            <div className={`flex justify-between items-center p-3 my-1 rounded shadow-sm border ${rank<=3?'bg-yellow-50 border-yellow-200':'bg-white'}`}>
+                <div className="flex items-center space-x-3">
+                    <span className="font-bold w-6">{rank}.</span>
+                    <div>
+                        <p className="font-bold text-gray-800">{player.name}</p>
+                        <p className="text-[10px] text-gray-400 uppercase">{player.role}</p>
+                    </div>
+                </div>
+                <div className="text-right flex items-center space-x-3">
+                    <div>
+                        <p className="font-black text-blue-600">{player.elo}</p>
+                        <p className="text-xs text-gray-400">{player.matchesPlayed} games</p>
+                    </div>
+                    {isAdmin && (
+                        <div className="flex space-x-1">
+                            <button onClick={()=>onEdit(player)} className="text-gray-400 hover:text-blue-500">✎</button>
+                            <button onClick={()=>onDelete(player.id, player.name)} className="text-gray-400 hover:text-red-500">×</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+
+        // --- MAIN APP ---
 
         function App() {
             const [db, setDb] = useState(null);
@@ -116,26 +362,18 @@
             }, [user]);
 
             useEffect(() => {
-                if (!window.firebase) {
-                    setError("Firebase SDK not loaded.");
-                    setIsLoading(false);
-                    return;
-                }
+                if (!window.firebase) { setError("Firebase SDK not loaded."); setIsLoading(false); return; }
                 try {
                     const app = window.firebase.initializeApp(firebaseConfig);
                     setDb(window.firebase.getFirestore(app));
                     setAuth(window.firebase.getAuth(app));
                     window.firebase.onAuthStateChanged(window.firebase.getAuth(app), u => { setUser(u); setIsLoading(false); });
-                } catch (e) {
-                    console.error("Init Error:", e);
-                    setError("Failed to initialize Firebase.");
-                    setIsLoading(false);
-                }
+                } catch (e) { setError("Init Failed"); setIsLoading(false); }
             }, []);
 
             const handleGoogleLogin = async () => {
                 try { await window.firebase.signInWithPopup(auth, new window.firebase.GoogleAuthProvider()); } 
-                catch (e) { alert("Login failed: " + e.message); }
+                catch (e) { alert("Login failed"); }
             };
 
             const handleLogout = async () => {
@@ -149,7 +387,6 @@
                 const unsub = window.firebase.onSnapshot(q, (snapshot) => {
                     const playerList = snapshot.docs.map(doc => {
                         const data = doc.data();
-                        // SAFE LOADING
                         return {
                             id: doc.id,
                             name: data.name || "Unknown",
@@ -159,6 +396,8 @@
                             goals: Number(data.goals) || 0,
                             assists: Number(data.assists) || 0,
                             cleanSheets: Number(data.cleanSheets) || 0,
+                            goalsFor: Number(data.goalsFor) || 0,
+                            goalsAgainst: Number(data.goalsAgainst) || 0
                         };
                     });
                     setPlayers(playerList);
@@ -168,28 +407,23 @@
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            // --- SAVE / LOAD FEATURE ---
             const handleExportData = () => {
                 const dataStr = JSON.stringify(players, null, 2);
                 const blob = new Blob([dataStr], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = url;
-                link.download = `soccer-backup-${new Date().toISOString().split('T')[0]}.json`;
+                link.download = `soccer-backup.json`;
                 document.body.appendChild(link); link.click(); document.body.removeChild(link);
             };
 
             const handleImportData = async (e) => {
                 const file = e.target.files[0];
-                if (!file) return;
-                if (!confirm("⚠️ WARNING: This will DELETE all current players and REPLACE them with the backup file. Continue?")) {
-                    e.target.value = null; return;
-                }
+                if (!file || !confirm("WARNING: This will overwrite data.")) return;
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
                         const importedPlayers = JSON.parse(ev.target.result);
-                        if (!Array.isArray(importedPlayers)) throw new Error("Invalid JSON");
                         setIsLoading(true);
                         const batch = window.firebase.writeBatch(db);
                         const colRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
@@ -203,24 +437,23 @@
                         });
                         await batch.commit();
                         alert("Restored!");
-                    } catch (err) { alert("Error: " + err.message); } 
+                    } catch (err) { alert("Error"); } 
                     finally { setIsLoading(false); e.target.value = null; }
                 };
                 reader.readAsText(file);
             };
 
-            // --- ACTIONS ---
             const handleAddPlayer = async (name, role, elo) => {
                 if (!db || !isAdmin) return; 
                 const newPlayer = {
                     name: name.trim(), role, elo: Number(elo), matchesPlayed: 0,
-                    goals: 0, assists: 0, cleanSheets: 0,
+                    goals: 0, assists: 0, cleanSheets: 0, goalsFor: 0, goalsAgainst: 0,
                     createdAt: new Date().toISOString(),
                 };
                 try {
                     await window.firebase.setDoc(window.firebase.doc(window.firebase.collection(db, `artifacts/${appId}/public/data/players`)), newPlayer);
                     setIsAddingPlayer(false);
-                } catch (e) { alert("Error: " + e.message); }
+                } catch (e) { alert("Error"); }
             };
 
             const handleUpdatePlayer = async (id, data) => {
@@ -228,7 +461,7 @@
                 try {
                     await window.firebase.updateDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/players`, id), data);
                     setEditingPlayer(null);
-                } catch (e) { alert("Error: " + e.message); }
+                } catch (e) { alert("Error"); }
             };
 
             const handleDeletePlayer = async (id, name) => {
@@ -255,9 +488,14 @@
                     const E = isA ? eA : (1 - eA);
                     const K = getKFactor(p.matchesPlayed);
                     const eloChange = Math.round(K * m * (S - E));
+                    
                     const matchGoals = p.matchGoals || 0;
                     const matchAssists = p.matchAssists || 0;
+                    
+                    // Stats Update
+                    const myTeamScore = isA ? scoreA : scoreB;
                     const opponentScore = isA ? scoreB : scoreA;
+                    
                     const earnedCleanSheet = (opponentScore === 0) ? 1 : 0;
 
                     const ref = window.firebase.doc(db, `artifacts/${appId}/public/data/players`, p.id);
@@ -266,273 +504,16 @@
                         matchesPlayed: p.matchesPlayed + 1,
                         goals: (p.goals || 0) + matchGoals,
                         assists: (p.assists || 0) + matchAssists,
-                        cleanSheets: (p.cleanSheets || 0) + earnedCleanSheet
+                        cleanSheets: (p.cleanSheets || 0) + earnedCleanSheet,
+                        goalsFor: (p.goalsFor || 0) + myTeamScore,
+                        goalsAgainst: (p.goalsAgainst || 0) + opponentScore
                     });
                 });
 
                 try { await batch.commit(); setActiveTab('leaderboard'); } 
-                catch (e) { alert("Failed: " + e.message); }
+                catch (e) { alert("Failed"); }
             };
 
-            // --- UI COMPONENTS ---
-
-            const StatsTab = ({ players }) => {
-                const [filters, setFilters] = useState({ Striker: true, Midfielder: true, Defender: true });
-                const [sortConfig, setSortConfig] = useState({ key: 'elo', direction: 'desc' });
-
-                const safePlayers = Array.isArray(players) ? players.filter(p => p && p.name) : [];
-
-                const filtered = safePlayers.filter(p => {
-                    const role = p.role || 'Midfielder'; 
-                    return filters[role];
-                });
-
-                const sorted = [...filtered].sort((a, b) => {
-                    const valA = Number(a[sortConfig.key] || 0);
-                    const valB = Number(b[sortConfig.key] || 0);
-                    return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
-                });
-
-                const requestSort = (key) => {
-                    let direction = 'desc';
-                    if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc';
-                    setSortConfig({ key, direction });
-                };
-
-                const SortIcon = ({ col }) => {
-                    if (sortConfig.key !== col) return <span className="text-gray-300 ml-1 text-[10px]">▼</span>;
-                    return <span className="text-blue-600 ml-1 text-[10px]">{sortConfig.direction === 'asc' ? '▲' : '▼'}</span>;
-                };
-
-                return (
-                    <div className="space-y-4">
-                        <div className="flex justify-center space-x-6 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-                            {['Striker', 'Midfielder', 'Defender'].map(role => (
-                                <label key={role} className="flex items-center space-x-2 cursor-pointer select-none">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={filters[role]} 
-                                        onChange={() => setFilters({...filters, [role]: !filters[role]})}
-                                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" 
-                                    />
-                                    <span className={`text-sm font-bold ${filters[role] ? 'text-gray-700' : 'text-gray-400'}`}>{role}</span>
-                                </label>
-                            ))}
-                        </div>
-
-                        <div className="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100">
-                            <table className="min-w-full text-sm">
-                                <thead className="bg-gray-50 border-b border-gray-200">
-                                    <tr>
-                                        <th className="p-3 text-left text-gray-500 font-bold">Player</th>
-                                        <th onClick={() => requestSort('elo')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">Elo<SortIcon col="elo"/></th>
-                                        <th onClick={() => requestSort('matchesPlayed')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">Mat<SortIcon col="matchesPlayed"/></th>
-                                        <th onClick={() => requestSort('goals')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">G<SortIcon col="goals"/></th>
-                                        <th onClick={() => requestSort('assists')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">A<SortIcon col="assists"/></th>
-                                        <th onClick={() => requestSort('cleanSheets')} className="sortable p-3 text-center text-gray-700 font-bold hover:bg-gray-100">CS<SortIcon col="cleanSheets"/></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {sorted.map((p, i) => (
-                                        <tr key={p.id || i} className="hover:bg-blue-50 transition-colors">
-                                            <td className="p-3 font-medium flex flex-col">
-                                                <span className="text-gray-800">{p.name}</span>
-                                                <span className="text-[10px] text-gray-400 uppercase tracking-wider">{p.role || '-'}</span>
-                                            </td>
-                                            <td className="p-3 text-center font-bold text-blue-600">{p.elo}</td>
-                                            <td className="p-3 text-center font-medium text-gray-600">{p.matchesPlayed}</td>
-                                            <td className="p-3 text-center font-medium text-gray-600">{p.goals || 0}</td>
-                                            <td className="p-3 text-center font-medium text-gray-600">{p.assists || 0}</td>
-                                            <td className="p-3 text-center font-medium text-gray-600">{p.cleanSheets || 0}</td>
-                                        </tr>
-                                    ))}
-                                    {sorted.length === 0 && <tr><td colSpan="6" className="p-6 text-center text-gray-400">No players found.</td></tr>}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            };
-
-            const EditPlayerForm = ({ player, onSave, onCancel }) => {
-                const [form, setForm] = useState({...player});
-                return (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                        <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-                            <h3 className="font-bold text-lg mb-4">Edit Player</h3>
-                            <form onSubmit={(e)=>{e.preventDefault(); onSave(player.id, form);}} className="space-y-4">
-                                <input value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full border p-2 rounded" placeholder="Name" required />
-                                <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})} className="w-full border p-2 rounded">
-                                    <option>Striker</option><option>Midfielder</option><option>Defender</option>
-                                </select>
-                                <div className="flex space-x-2">
-                                    <input type="number" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} className="w-full border p-2 rounded" placeholder="Elo" />
-                                    <input type="number" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} className="w-full border p-2 rounded" placeholder="Matches" />
-                                </div>
-                                <div className="grid grid-cols-3 gap-2 bg-gray-50 p-2 rounded">
-                                    <div><label className="text-[10px] font-bold text-gray-500">Goals</label><input type="number" value={form.goals} onChange={e=>setForm({...form, goals:Number(e.target.value)})} className="w-full border p-1 rounded text-sm text-center" /></div>
-                                    <div><label className="text-[10px] font-bold text-gray-500">Assists</label><input type="number" value={form.assists} onChange={e=>setForm({...form, assists:Number(e.target.value)})} className="w-full border p-1 rounded text-sm text-center" /></div>
-                                    <div><label className="text-[10px] font-bold text-gray-500">CleanS</label><input type="number" value={form.cleanSheets} onChange={e=>setForm({...form, cleanSheets:Number(e.target.value)})} className="w-full border p-1 rounded text-sm text-center" /></div>
-                                </div>
-                                <div className="flex justify-end space-x-2">
-                                    <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
-                                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                );
-            };
-
-            const LogMatchForm = ({ players, onLogMatch }) => {
-                const [teamA, setTeamA] = useState([]);
-                const [teamB, setTeamB] = useState([]);
-                const [scoreA, setScoreA] = useState(0);
-                const [scoreB, setScoreB] = useState(0);
-                const [isTournamentMode, setIsTournamentMode] = useState(false);
-
-                const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
-
-                const addPlayer = (p, team) => {
-                    const entry = { ...p, matchGoals: 0, matchAssists: 0 };
-                    if(team==='A') setTeamA([...teamA, entry]); else setTeamB([...teamB, entry]);
-                };
-
-                const updateStat = (id, team, field, delta) => {
-                    const updater = list => list.map(p => {
-                        if(p.id !== id) return p;
-                        const val = Math.max(0, (p[field]||0) + delta);
-                        if(field==='matchGoals') {
-                            if(team==='A') setScoreA(s => Math.max(0, s + (val - (p.matchGoals||0))));
-                            else setScoreB(s => Math.max(0, s + (val - (p.matchGoals||0))));
-                        }
-                        return { ...p, [field]: val };
-                    });
-                    if(team==='A') setTeamA(updater(teamA)); else setTeamB(updater(teamB));
-                };
-
-                const TeamList = ({ list, teamKey, score, setScore }) => (
-                    <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
-                        <div className="flex justify-between items-center mb-2">
-                            <span className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>{teamKey==='A'?'Blue':'Red'} ({list.length})</span>
-                            <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold bg-white" />
-                        </div>
-                        {list.map(p => (
-                            <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
-                                <div className="flex justify-between font-medium">
-                                    <span>{p.name}</span>
-                                    <button onClick={()=> teamKey==='A' ? setTeamA(teamA.filter(x=>x.id!==p.id)) : setTeamB(teamB.filter(x=>x.id!==p.id))} className="text-gray-300 hover:text-red-500 font-bold">×</button>
-                                </div>
-                                <div className="flex space-x-3 mt-1">
-                                    <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
-                                        <span className="text-[10px] font-bold text-gray-400">G</span>
-                                        <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
-                                        <span className="font-bold w-3 text-center text-xs">{p.matchGoals}</span>
-                                        <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', 1)} className="text-blue-600 hover:text-blue-800 font-bold px-1">+</button>
-                                    </div>
-                                    <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
-                                        <span className="text-[10px] font-bold text-gray-400">A</span>
-                                        <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
-                                        <span className="font-bold w-3 text-center text-xs">{p.matchAssists}</span>
-                                        <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', 1)} className="text-green-600 hover:text-green-800 font-bold px-1">+</button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                );
-
-                const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
-                const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
-                const prob = teamA.length && teamB.length ? (calculateExpectedScore(teamAEff, teamBEff)*100).toFixed(1) : '50.0';
-
-                return (
-                    <form onSubmit={e=>{e.preventDefault(); onLogMatch(teamA, teamB, scoreA, scoreB, isTournamentMode)}} className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <div className="bg-gray-100 p-2 rounded max-h-64 overflow-y-auto md:order-2">
-                                <p className="text-xs font-bold text-gray-500 mb-2">ROSTER</p>
-                                {available.map(p => (
-                                    <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
-                                        <span className="truncate">{p.name} <span className="text-xs text-gray-400">({p.elo})</span></span>
-                                        <div className="space-x-1">
-                                            <button type="button" onClick={()=>addPlayer(p,'A')} className="text-xs bg-blue-100 text-blue-600 px-1 rounded font-bold">+Blu</button>
-                                            <button type="button" onClick={()=>addPlayer(p,'B')} className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">+Red</button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="md:order-1"><TeamList list={teamA} teamKey="A" score={scoreA} setScore={setScoreA} /></div>
-                            <div className="md:order-3"><TeamList list={teamB} teamKey="B" score={scoreB} setScore={setScoreB} /></div>
-                        </div>
-                        <div className="bg-white p-3 rounded shadow space-y-2">
-                            <div className="flex justify-between text-sm"><span>Win Prob (Blue):</span><span className={`font-bold ${teamAEff>teamBEff?'text-blue-600':'text-red-600'}`}>{prob}%</span></div>
-                            <label className="flex items-center space-x-2 text-sm select-none cursor-pointer bg-yellow-50 p-2 rounded">
-                                <input type="checkbox" checked={isTournamentMode} onChange={e=>setIsTournamentMode(e.target.checked)} className="accent-blue-600"/> 
-                                <span className="font-semibold text-gray-700">Tournament Mode (Equal players)</span>
-                            </label>
-                            <button type="submit" disabled={teamA.length===0 || teamB.length===0} className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white font-bold py-3 rounded shadow disabled:bg-gray-300">Update Ratings</button>
-                        </div>
-                    </form>
-                );
-            };
-
-            // NEW: Add Player Form using a proper Form element
-            const AddPlayerForm = ({ onAdd, onCancel }) => {
-                const [name, setName] = useState('');
-                const [role, setRole] = useState('Midfielder');
-                const [elo, setElo] = useState(1500);
-
-                const handleSubmit = (e) => {
-                    e.preventDefault();
-                    if (!name.trim()) return;
-                    onAdd(name, role, elo);
-                };
-
-                return (
-                    <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-4">
-                        <h4 className="font-bold mb-2">New Player</h4>
-                        <div className="flex space-x-2 mb-2">
-                            <input value={name} onChange={e=>setName(e.target.value)} className="border p-2 rounded flex-1" placeholder="Name" required />
-                            <select value={role} onChange={e=>setRole(e.target.value)} className="border p-2 rounded">
-                                <option>Striker</option><option>Midfielder</option><option>Defender</option>
-                            </select>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="border p-2 rounded w-24" placeholder="Elo" />
-                            <div className="space-x-2">
-                                <button type="button" onClick={onCancel} className="text-gray-500 text-sm">Cancel</button>
-                                <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold">Add</button>
-                            </div>
-                        </div>
-                    </form>
-                );
-            };
-
-            const PlayerItem = ({ player, rank, isAdmin, onEdit, onDelete }) => (
-                <div className={`flex justify-between items-center p-3 my-1 rounded shadow-sm border ${rank<=3?'bg-yellow-50 border-yellow-200':'bg-white'}`}>
-                    <div className="flex items-center space-x-3">
-                        <span className="font-bold w-6">{rank}.</span>
-                        <div>
-                            <p className="font-bold text-gray-800">{player.name}</p>
-                            <p className="text-[10px] text-gray-400 uppercase">{player.role}</p>
-                        </div>
-                    </div>
-                    <div className="text-right flex items-center space-x-3">
-                        <div>
-                            <p className="font-black text-blue-600">{player.elo}</p>
-                            <p className="text-xs text-gray-400">{player.matchesPlayed} games</p>
-                        </div>
-                        {isAdmin && (
-                            <div className="flex space-x-1">
-                                <button onClick={()=>onEdit(player)} className="text-gray-400 hover:text-blue-500">✎</button>
-                                <button onClick={()=>onDelete(player.id, player.name)} className="text-gray-400 hover:text-red-500">×</button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-
-            // --- RENDER ---
             if (isLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
 
             return (
@@ -547,7 +528,6 @@
                         </div>
                         <div className="flex space-x-4 border-b">
                             <button onClick={()=>setActiveTab('leaderboard')} className={`pb-2 font-bold ${activeTab==='leaderboard'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Rankings</button>
-                            {/* NEW: Stats Tab Button */}
                             <button onClick={()=>setActiveTab('stats')} className={`pb-2 font-bold ${activeTab==='stats'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Stats</button>
                             {isAdmin && <button onClick={()=>setActiveTab('logMatch')} className={`pb-2 font-bold ${activeTab==='logMatch'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Log Match</button>}
                         </div>
