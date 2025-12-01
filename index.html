@@ -28,7 +28,6 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        // Added 'increment' for atomic stat updates
         import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
         window.firebase = {
@@ -93,7 +92,9 @@
             return 2.5;
         };
 
-        // --- SUB-COMPONENTS ---
+        // ==========================================
+        // SUB-COMPONENTS (ALL DEFINED OUTSIDE APP)
+        // ==========================================
 
         const StatsTab = ({ players }) => {
             const [filters, setFilters] = useState({ Striker: true, Midfielder: true, Defender: true });
@@ -279,7 +280,7 @@
             );
         };
 
-        // NEW: Edit Match Modal (Zero-Sum Logic)
+        // NEW: Edit Match Modal (Missing in previous turn)
         const EditMatchModal = ({ match, onSave, onCancel }) => {
             const [teamA, setTeamA] = useState([...match.teamA]);
             const [teamB, setTeamB] = useState([...match.teamB]);
@@ -288,6 +289,7 @@
             const totalGoalsA = teamA.reduce((acc, p) => acc + (p.goals || 0), 0);
             const totalGoalsB = teamB.reduce((acc, p) => acc + (p.goals || 0), 0);
             
+            // ZERO-SUM RULE: Total goals must match the original score.
             const isValid = totalGoalsA === match.scoreA && totalGoalsB === match.scoreB;
 
             const updateStat = (teamKey, index, field, delta) => {
@@ -343,7 +345,7 @@
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
                     <div className="bg-white rounded-xl shadow-2xl p-4 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                         <h3 className="font-bold text-lg mb-2">Edit Match Stats</h3>
-                        <p className="text-xs text-gray-500 mb-4">Assign goals to players. Totals must match the final score to save.</p>
+                        <p className="text-xs text-gray-500 mb-4">Assign goals. Totals must match score. Roster is locked.</p>
                         
                         <form onSubmit={handleSave}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -351,10 +353,10 @@
                                 <TeamEditList list={teamB} teamKey="B" score={match.scoreB} total={totalGoalsB} />
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t">
-                                {!isValid ? <span className="text-xs font-bold text-red-500">Goals do not match score!</span> : <span></span>}
+                                {!isValid ? <span className="text-xs font-bold text-red-500">Goal count mismatch!</span> : <span></span>}
                                 <div className="flex space-x-2">
                                     <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded text-sm font-bold">Cancel</button>
-                                    <button type="submit" disabled={!isValid} className={`px-4 py-2 rounded text-sm font-bold text-white ${isValid ? 'bg-blue-600' : 'bg-gray-300 cursor-not-allowed'}`}>Save Corrections</button>
+                                    <button type="submit" disabled={!isValid} className={`px-4 py-2 rounded text-sm font-bold text-white ${isValid ? 'bg-blue-600' : 'bg-gray-300 cursor-not-allowed'}`}>Save</button>
                                 </div>
                             </div>
                         </form>
@@ -394,93 +396,32 @@
             );
         };
 
-        const LogMatchForm = ({ players, onLogMatch }) => {
-            const [teamA, setTeamA] = useState([]);
-            const [teamB, setTeamB] = useState([]);
-            const [scoreA, setScoreA] = useState(0);
-            const [scoreB, setScoreB] = useState(0);
-            const [isTournamentMode, setIsTournamentMode] = useState(false);
+        const AddPlayerForm = ({ onAdd, onCancel }) => {
+            const [name, setName] = useState('');
+            const [role, setRole] = useState('Midfielder');
+            const [elo, setElo] = useState(1500);
 
-            const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
-
-            const addPlayer = (p, team) => {
-                const entry = { ...p, matchGoals: 0, matchAssists: 0 };
-                if(team==='A') setTeamA([...teamA, entry]); else setTeamB([...teamB, entry]);
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!name.trim()) return;
+                onAdd(name, role, elo);
             };
-
-            const updateStat = (id, team, field, delta) => {
-                const updater = list => list.map(p => {
-                    if(p.id !== id) return p;
-                    const val = Math.max(0, (p[field]||0) + delta);
-                    if(field==='matchGoals') {
-                        if(team==='A') setScoreA(s => Math.max(0, s + (val - (p.matchGoals||0))));
-                        else setScoreB(s => Math.max(0, s + (val - (p.matchGoals||0))));
-                    }
-                    return { ...p, [field]: val };
-                });
-                if(team==='A') setTeamA(updater(teamA)); else setTeamB(updater(teamB));
-            };
-
-            const TeamList = ({ list, teamKey, score, setScore }) => (
-                <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
-                    <div className="flex justify-between items-center mb-2">
-                        <span className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>{teamKey==='A'?'Blue':'Red'} ({list.length})</span>
-                        <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold bg-white" />
-                    </div>
-                    {list.map(p => (
-                        <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
-                            <div className="flex justify-between font-medium">
-                                <span>{p.name}</span>
-                                <button onClick={()=> teamKey==='A' ? setTeamA(teamA.filter(x=>x.id!==p.id)) : setTeamB(teamB.filter(x=>x.id!==p.id))} className="text-gray-300 hover:text-red-500 font-bold">×</button>
-                            </div>
-                            <div className="flex space-x-3 mt-1">
-                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
-                                    <span className="text-[10px] font-bold text-gray-400">G</span>
-                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
-                                    <span className="font-bold w-3 text-center text-xs">{p.matchGoals}</span>
-                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', 1)} className="text-blue-600 hover:text-blue-800 font-bold px-1">+</button>
-                                </div>
-                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
-                                    <span className="text-[10px] font-bold text-gray-400">A</span>
-                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
-                                    <span className="font-bold w-3 text-center text-xs">{p.matchAssists}</span>
-                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', 1)} className="text-green-600 hover:text-green-800 font-bold px-1">+</button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            );
-
-            const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
-            const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
-            const prob = teamA.length && teamB.length ? (calculateExpectedScore(teamAEff, teamBEff)*100).toFixed(1) : '50.0';
 
             return (
-                <form onSubmit={e=>{e.preventDefault(); onLogMatch(teamA, teamB, scoreA, scoreB, isTournamentMode)}} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                        <div className="bg-gray-100 p-2 rounded max-h-64 overflow-y-auto md:order-2">
-                            <p className="text-xs font-bold text-gray-500 mb-2">ROSTER</p>
-                            {available.map(p => (
-                                <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
-                                    <span className="truncate">{p.name} <span className="text-xs text-gray-400">({p.elo})</span></span>
-                                    <div className="space-x-1">
-                                        <button type="button" onClick={()=>addPlayer(p,'A')} className="text-xs bg-blue-100 text-blue-600 px-1 rounded font-bold">+Blu</button>
-                                        <button type="button" onClick={()=>addPlayer(p,'B')} className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">+Red</button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <div className="md:order-1"><TeamList list={teamA} teamKey="A" score={scoreA} setScore={setScoreA} /></div>
-                        <div className="md:order-3"><TeamList list={teamB} teamKey="B" score={scoreB} setScore={setScoreB} /></div>
+                <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-4 animate-fade-in">
+                    <h4 className="font-bold mb-2">New Player</h4>
+                    <div className="flex space-x-2 mb-2">
+                        <input value={name} onChange={e=>setName(e.target.value)} className="border p-2 rounded flex-1" placeholder="Name" required />
+                        <select value={role} onChange={e=>setRole(e.target.value)} className="border p-2 rounded">
+                            <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                        </select>
                     </div>
-                    <div className="bg-white p-3 rounded shadow space-y-2">
-                        <div className="flex justify-between text-sm"><span>Win Prob (Blue):</span><span className={`font-bold ${teamAEff>teamBEff?'text-blue-600':'text-red-600'}`}>{prob}%</span></div>
-                        <label className="flex items-center space-x-2 text-sm select-none cursor-pointer bg-yellow-50 p-2 rounded">
-                            <input type="checkbox" checked={isTournamentMode} onChange={e=>setIsTournamentMode(e.target.checked)} className="accent-blue-600"/> 
-                            <span className="font-semibold text-gray-700">Tournament Mode (Equal players)</span>
-                        </label>
-                        <button type="submit" disabled={teamA.length===0 || teamB.length===0} className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white font-bold py-3 rounded shadow disabled:bg-gray-300">Update Ratings</button>
+                    <div className="flex justify-between items-center">
+                        <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="border p-2 rounded w-24" placeholder="Elo" />
+                        <div className="space-x-2">
+                            <button type="button" onClick={onCancel} className="text-gray-500 text-sm">Cancel</button>
+                            <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold">Add</button>
+                        </div>
                     </div>
                 </form>
             );
@@ -521,7 +462,7 @@
             const [activeTab, setActiveTab] = useState('leaderboard');
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
             const [editingPlayer, setEditingPlayer] = useState(null);
-            const [editingMatch, setEditingMatch] = useState(null); // NEW
+            const [editingMatch, setEditingMatch] = useState(null); 
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
             const fileInputRef = useRef(null);
@@ -595,7 +536,8 @@
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            // --- DELETE MATCH LOGIC ---
+            // --- DATA MANAGEMENT ---
+
             const handleDeleteMatch = async (matchId) => {
                 if (!db || !isAdmin) return;
                 if (confirm("Delete this log? (Note: This does NOT revert player stats. You must edit player stats manually if needed.)")) {
@@ -605,7 +547,6 @@
                 }
             };
 
-            // NEW: Edit Match Stats Logic (Delta Updates)
             const handleUpdateMatchStats = async (matchId, updatedMatch) => {
                 if (!db || !isAdmin) return;
                 const oldMatch = history.find(h => h.id === matchId);
@@ -802,7 +743,7 @@
                         
                         {editingPlayer && <EditPlayerForm player={editingPlayer} onSave={handleUpdatePlayer} onCancel={()=>setEditingPlayer(null)} />}
                         
-                        {/* EDIT MATCH MODAL */}
+                        {/* EDIT MATCH MODAL (ZERO SUM ENFORCED) */}
                         {editingMatch && <EditMatchModal match={editingMatch} onSave={handleUpdateMatchStats} onCancel={()=>setEditingMatch(null)} />}
 
                         {activeTab === 'leaderboard' && (
