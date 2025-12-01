@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BSA-UA Football Ranking</title>
+    <title>BSA-UA Football League</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
     <style>
@@ -12,8 +12,7 @@
         .animate-spin { animation: spin 1s linear infinite; }
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        th.sortable { cursor: pointer; user-select: none; transition: background-color 0.2s; }
-        th.sortable:hover { background-color: #f3f4f6; }
+        th.sortable:hover { background-color: #f3f4f6; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -26,11 +25,12 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        // Added 'orderBy' for sorting history
+        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
         window.firebase = {
             initializeApp, getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs
+            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy
         };
     </script>
     
@@ -61,7 +61,7 @@
         const K_INITIAL = 80; const K_MIDDLE = 40; const K_STABLE = 20; 
         const MATCH_CUTOFF_INITIAL = 10; const MATCH_CUTOFF_MIDDLE = 30;
 
-        // --- Helper Functions ---
+        // --- MATH HELPERS ---
         const getEffectiveElo = (teamPlayers, opponentPlayers, isTournamentMode) => {
             if (teamPlayers.length === 0) return 0;
             const avgElo = teamPlayers.reduce((sum, p) => sum + p.elo, 0) / teamPlayers.length;
@@ -132,7 +132,6 @@
                                     <th onClick={() => requestSort('matchesPlayed')} className="sortable p-3 text-center font-bold text-gray-700">M<SortIcon col="matchesPlayed"/></th>
                                     <th onClick={() => requestSort('goals')} className="sortable p-3 text-center font-bold text-gray-700">G<SortIcon col="goals"/></th>
                                     <th onClick={() => requestSort('assists')} className="sortable p-3 text-center font-bold text-gray-700">A<SortIcon col="assists"/></th>
-                                    {/* NEW: Goals For / Goals Against */}
                                     <th onClick={() => requestSort('goalsFor')} className="sortable p-3 text-center font-bold text-green-700 bg-green-50">GF<SortIcon col="goalsFor"/></th>
                                     <th onClick={() => requestSort('goalsAgainst')} className="sortable p-3 text-center font-bold text-red-700 bg-red-50">GA<SortIcon col="goalsAgainst"/></th>
                                     <th onClick={() => requestSort('cleanSheets')} className="sortable p-3 text-center font-bold text-gray-700">CS<SortIcon col="cleanSheets"/></th>
@@ -161,6 +160,80 @@
             );
         };
 
+        // NEW: History Tab Component
+        const HistoryTab = ({ history }) => {
+            // Group history by Date (YYYY-MM-DD)
+            const groupedHistory = useMemo(() => {
+                if (!Array.isArray(history)) return {};
+                return history.reduce((acc, match) => {
+                    const date = new Date(match.timestamp).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                    if (!acc[date]) acc[date] = [];
+                    acc[date].push(match);
+                    return acc;
+                }, {});
+            }, [history]);
+
+            // Sort dates descending
+            const sortedDates = Object.keys(groupedHistory).sort((a, b) => new Date(b) - new Date(a));
+
+            return (
+                <div className="space-y-6">
+                    {sortedDates.map(date => (
+                        <div key={date}>
+                            <div className="sticky top-0 bg-gray-50 py-2 z-10">
+                                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">{date}</h3>
+                            </div>
+                            <div className="space-y-3">
+                                {groupedHistory[date].sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp)).map((match, idx) => (
+                                    <div key={match.id || idx} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex flex-col space-y-3">
+                                        <div className="flex justify-between items-center border-b pb-2">
+                                            <div className="text-2xl font-black tracking-tight">
+                                                <span className="text-blue-600">{match.scoreA}</span>
+                                                <span className="text-gray-300 mx-2">-</span>
+                                                <span className="text-red-600">{match.scoreB}</span>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-[10px] text-gray-400">{new Date(match.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                                                {match.isTournamentMode && <span className="text-[9px] bg-yellow-100 text-yellow-800 px-1 rounded uppercase font-bold">Tournament</span>}
+                                            </div>
+                                        </div>
+                                        {/* Player Lists in History */}
+                                        <div className="grid grid-cols-2 gap-4 text-xs">
+                                            <div>
+                                                <p className="font-bold text-blue-800 mb-1">Blue Team</p>
+                                                {match.teamA.map((p, i) => (
+                                                    <div key={i} className="flex justify-between text-gray-600">
+                                                        <span>{p.name}</span>
+                                                        <span className="font-bold">
+                                                            {p.goals > 0 && `⚽${p.goals} `}
+                                                            {p.assists > 0 && `🅰${p.assists}`}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div>
+                                                <p className="font-bold text-red-800 mb-1">Red Team</p>
+                                                {match.teamB.map((p, i) => (
+                                                    <div key={i} className="flex justify-between text-gray-600">
+                                                        <span>{p.name}</span>
+                                                        <span className="font-bold">
+                                                            {p.goals > 0 && `⚽${p.goals} `}
+                                                            {p.assists > 0 && `🅰${p.assists}`}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                    {history.length === 0 && <div className="text-center text-gray-400 py-10">No match history found.</div>}
+                </div>
+            );
+        };
+
         const EditPlayerForm = ({ player, onSave, onCancel }) => {
             const [form, setForm] = useState({...player});
             return (
@@ -176,7 +249,6 @@
                                 <div className="flex-1"><label className="text-xs font-bold">Elo</label><input type="number" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
                                 <div className="flex-1"><label className="text-xs font-bold">Matches</label><input type="number" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
                             </div>
-                            {/* Manual Edit for GF/GA */}
                             <div className="grid grid-cols-4 gap-2 bg-gray-50 p-2 rounded text-center">
                                 <div><label className="text-[10px] font-bold">G</label><input type="number" value={form.goals||0} onChange={e=>setForm({...form, goals:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
                                 <div><label className="text-[10px] font-bold">A</label><input type="number" value={form.assists||0} onChange={e=>setForm({...form, assists:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
@@ -347,6 +419,7 @@
             const [auth, setAuth] = useState(null);
             const [user, setUser] = useState(null); 
             const [players, setPlayers] = useState([]);
+            const [history, setHistory] = useState([]);
             const [activeTab, setActiveTab] = useState('leaderboard');
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
             const [editingPlayer, setEditingPlayer] = useState(null);
@@ -383,8 +456,10 @@
 
             useEffect(() => {
                 if (!db) return;
-                const q = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
-                const unsub = window.firebase.onSnapshot(q, (snapshot) => {
+                
+                // Fetch Players
+                const qPlayers = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
+                const unsubPlayers = window.firebase.onSnapshot(qPlayers, (snapshot) => {
                     const playerList = snapshot.docs.map(doc => {
                         const data = doc.data();
                         return {
@@ -401,43 +476,90 @@
                         };
                     });
                     setPlayers(playerList);
-                }, (e) => { console.error(e); setError("Failed to load data."); });
-                return () => unsub();
+                });
+
+                // Fetch History (Sorted by Timestamp)
+                const qHistory = window.firebase.query(
+                    window.firebase.collection(db, `artifacts/${appId}/public/data/history`),
+                    window.firebase.orderBy('timestamp', 'desc')
+                );
+                
+                const unsubHistory = window.firebase.onSnapshot(qHistory, (snapshot) => {
+                    const historyList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setHistory(historyList);
+                }, (err) => {
+                    console.warn("History sort error (likely missing index):", err);
+                    // Fallback if index is missing: Fetch unsorted and sort in JS
+                    const qFallback = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/history`));
+                    window.firebase.getDocs(qFallback).then(snap => {
+                        const logs = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                        logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+                        setHistory(logs);
+                    });
+                });
+
+                return () => { unsubPlayers(); unsubHistory(); };
             }, [db]);
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
             const handleExportData = () => {
-                const dataStr = JSON.stringify(players, null, 2);
-                const blob = new Blob([dataStr], { type: "application/json" });
+                // Bundle Players AND History
+                const backup = { players, history, exportDate: new Date().toISOString() };
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.href = url;
-                link.download = `soccer-backup.json`;
+                link.download = `soccer-backup-${new Date().toISOString().split('T')[0]}.json`;
                 document.body.appendChild(link); link.click(); document.body.removeChild(link);
             };
 
             const handleImportData = async (e) => {
                 const file = e.target.files[0];
-                if (!file || !confirm("WARNING: This will overwrite data.")) return;
+                if (!file) return;
+                if (!confirm("⚠️ WARNING: This will DELETE all current data (Players AND History) and replace it with the backup. Continue?")) {
+                    e.target.value = null; return;
+                }
                 const reader = new FileReader();
                 reader.onload = async (ev) => {
                     try {
-                        const importedPlayers = JSON.parse(ev.target.result);
+                        const data = JSON.parse(ev.target.result);
+                        // Check format
+                        const importedPlayers = data.players || (Array.isArray(data) ? data : []);
+                        const importedHistory = data.history || [];
+
                         setIsLoading(true);
                         const batch = window.firebase.writeBatch(db);
-                        const colRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
-                        const snapshot = await window.firebase.getDocs(colRef);
-                        snapshot.forEach(doc => batch.delete(doc.ref));
+                        
+                        // 1. Clear Players
+                        const pRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
+                        const pSnap = await window.firebase.getDocs(pRef);
+                        pSnap.forEach(doc => batch.delete(doc.ref));
+
+                        // 2. Clear History
+                        const hRef = window.firebase.collection(db, `artifacts/${appId}/public/data/history`);
+                        const hSnap = await window.firebase.getDocs(hRef);
+                        hSnap.forEach(doc => batch.delete(doc.ref));
+
+                        // 3. Restore Players
                         importedPlayers.forEach(p => {
                             if (p.id && p.name) {
-                                const { id, ...data } = p;
-                                batch.set(window.firebase.doc(colRef, id), data);
+                                const { id, ...playerData } = p;
+                                batch.set(window.firebase.doc(pRef, id), playerData);
                             }
                         });
+
+                        // 4. Restore History
+                        importedHistory.forEach(h => {
+                            // Generate ID if missing (for old backups)
+                            const docId = h.id || window.firebase.doc(hRef).id; 
+                            const { id, ...historyData } = h;
+                            batch.set(window.firebase.doc(hRef, docId), historyData);
+                        });
+
                         await batch.commit();
-                        alert("Restored!");
-                    } catch (err) { alert("Error"); } 
+                        alert("Full Database Restored!");
+                    } catch (err) { alert("Error: " + err.message); } 
                     finally { setIsLoading(false); e.target.value = null; }
                 };
                 reader.readAsText(file);
@@ -482,6 +604,7 @@
                 const m = isTournamentMode ? 1 : getMarginMultiplier(Math.abs(scoreA - scoreB));
                 const batch = window.firebase.writeBatch(db);
 
+                // 1. Update Players
                 [...teamA, ...teamB].forEach(p => {
                     const isA = teamA.some(x => x.id === p.id);
                     const S = isA ? sA : sB;
@@ -492,10 +615,8 @@
                     const matchGoals = p.matchGoals || 0;
                     const matchAssists = p.matchAssists || 0;
                     
-                    // Stats Update
                     const myTeamScore = isA ? scoreA : scoreB;
                     const opponentScore = isA ? scoreB : scoreA;
-                    
                     const earnedCleanSheet = (opponentScore === 0) ? 1 : 0;
 
                     const ref = window.firebase.doc(db, `artifacts/${appId}/public/data/players`, p.id);
@@ -508,6 +629,16 @@
                         goalsFor: (p.goalsFor || 0) + myTeamScore,
                         goalsAgainst: (p.goalsAgainst || 0) + opponentScore
                     });
+                });
+
+                // 2. Add to History
+                const historyRef = window.firebase.doc(window.firebase.collection(db, `artifacts/${appId}/public/data/history`));
+                batch.set(historyRef, {
+                    timestamp: new Date().toISOString(),
+                    scoreA, scoreB,
+                    isTournamentMode,
+                    teamA: teamA.map(p => ({ name: p.name, goals: p.matchGoals, assists: p.matchAssists })),
+                    teamB: teamB.map(p => ({ name: p.name, goals: p.matchGoals, assists: p.matchAssists })),
                 });
 
                 try { await batch.commit(); setActiveTab('leaderboard'); } 
@@ -529,6 +660,7 @@
                         <div className="flex space-x-4 border-b">
                             <button onClick={()=>setActiveTab('leaderboard')} className={`pb-2 font-bold ${activeTab==='leaderboard'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Rankings</button>
                             <button onClick={()=>setActiveTab('stats')} className={`pb-2 font-bold ${activeTab==='stats'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Stats</button>
+                            <button onClick={()=>setActiveTab('history')} className={`pb-2 font-bold ${activeTab==='history'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>History</button>
                             {isAdmin && <button onClick={()=>setActiveTab('logMatch')} className={`pb-2 font-bold ${activeTab==='logMatch'?'border-b-2 border-blue-500 text-blue-600':'text-gray-400'}`}>Log Match</button>}
                         </div>
                     </header>
@@ -556,6 +688,7 @@
                         )}
 
                         {activeTab === 'stats' && <StatsTab players={players} />}
+                        {activeTab === 'history' && <HistoryTab history={history} />}
                         {activeTab === 'logMatch' && isAdmin && <LogMatchForm players={players} onLogMatch={handleLogMatch} />}
                     </main>
                 </div>
