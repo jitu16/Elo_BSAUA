@@ -662,7 +662,7 @@
                 if (!db || !isAdmin) return;
                 
                 // Auto-Save Undo Point before edit
-                await createUndoPoint();
+                //await createUndoPoint(); //No need for this!
 
                 const oldMatch = history.find(h => h.id === matchId);
                 if (!oldMatch) return;
