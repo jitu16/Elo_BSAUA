@@ -14,8 +14,9 @@
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         th.sortable { cursor: pointer; user-select: none; transition: background-color 0.2s; }
         th.sortable:hover { background-color: #f3f4f6; }
+        /* Fade in animation */
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fade-in { animation: fadeIn 0.2s ease-in; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-in; }
     </style>
 </head>
 <body>
@@ -28,11 +29,11 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
         window.firebase = {
             initializeApp, getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy, increment
+            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy
         };
     </script>
     
@@ -93,7 +94,7 @@
         };
 
         // ==========================================
-        // SUB-COMPONENTS (ALL DEFINED OUTSIDE APP)
+        // SUB-COMPONENTS (MOVED OUTSIDE APP TO FIX CRASH)
         // ==========================================
 
         const StatsTab = ({ players }) => {
@@ -167,7 +168,7 @@
             );
         };
 
-        const HistoryTab = ({ history, isAdmin, onDelete, onEdit }) => {
+        const HistoryTab = ({ history }) => {
             const [expandedMatches, setExpandedMatches] = useState({});
             const toggleMatch = (id) => setExpandedMatches(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -201,32 +202,9 @@
                                     const matchId = match.id || idx;
                                     const isExpanded = expandedMatches[matchId];
                                     return (
-                                        <div key={matchId} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden relative group">
-                                            {isAdmin && (
-                                                <div className="absolute top-2 left-2 flex space-x-1 z-20">
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); onEdit(match); }} 
-                                                        className="bg-white p-1 rounded-full shadow border border-blue-100 text-blue-400 hover:text-blue-600 hover:bg-blue-50"
-                                                        title="Edit Stats"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                                                        </svg>
-                                                    </button>
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); onDelete(matchId); }} 
-                                                        className="bg-white p-1 rounded-full shadow border border-red-100 text-red-400 hover:text-red-600 hover:bg-red-50"
-                                                        title="Delete Log"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                            )}
-
+                                        <div key={matchId} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
                                             <div className="p-4 flex flex-col space-y-2 border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => toggleMatch(matchId)}>
-                                                <div className="flex justify-between items-center pl-14">
+                                                <div className="flex justify-between items-center">
                                                     <div className="text-2xl font-black tracking-tight">
                                                         <span className="text-blue-600">{match.scoreA}</span>
                                                         <span className="text-gray-300 mx-2">-</span>
@@ -238,7 +216,7 @@
                                                     </div>
                                                 </div>
                                                 {!isExpanded && (
-                                                    <div className="text-xs text-gray-500 space-y-1 pl-14">
+                                                    <div className="text-xs text-gray-500 space-y-1">
                                                         <div className="flex"><span className="font-bold text-blue-600 w-12">Blue:</span><span className="truncate">{getScorers(match.teamA) || "No goals"}</span></div>
                                                         <div className="flex"><span className="font-bold text-red-600 w-12">Red:</span><span className="truncate">{getScorers(match.teamB) || "No goals"}</span></div>
                                                     </div>
@@ -280,91 +258,6 @@
             );
         };
 
-        // NEW: Edit Match Modal (Missing in previous turn)
-        const EditMatchModal = ({ match, onSave, onCancel }) => {
-            const [teamA, setTeamA] = useState([...match.teamA]);
-            const [teamB, setTeamB] = useState([...match.teamB]);
-            
-            // Calculate current sums
-            const totalGoalsA = teamA.reduce((acc, p) => acc + (p.goals || 0), 0);
-            const totalGoalsB = teamB.reduce((acc, p) => acc + (p.goals || 0), 0);
-            
-            // ZERO-SUM RULE: Total goals must match the original score.
-            const isValid = totalGoalsA === match.scoreA && totalGoalsB === match.scoreB;
-
-            const updateStat = (teamKey, index, field, delta) => {
-                const updateList = (list) => list.map((p, i) => {
-                    if (i !== index) return p;
-                    const val = Math.max(0, (p[field] || 0) + delta);
-                    return { ...p, [field]: val };
-                });
-
-                if (teamKey === 'A') setTeamA(updateList(teamA));
-                else setTeamB(updateList(teamB));
-            };
-
-            const handleSave = (e) => {
-                e.preventDefault();
-                if(!isValid) return;
-                onSave(match.id, { ...match, teamA, teamB });
-            };
-
-            const TeamEditList = ({ list, teamKey, score, total }) => (
-                <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'} border ${total !== score ? 'border-red-300' : 'border-transparent'}`}>
-                    <div className="flex justify-between items-center mb-2">
-                        <h4 className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>
-                            {teamKey==='A'?'Blue':'Red'}
-                        </h4>
-                        <span className={`text-xs font-bold px-2 py-1 rounded ${total===score?'bg-white text-green-600':'bg-red-100 text-red-600'}`}>
-                            {total} / {score} Goals
-                        </span>
-                    </div>
-                    {list.map((p, i) => (
-                        <div key={i} className="flex justify-between items-center bg-white p-2 mb-1 rounded text-xs shadow-sm">
-                            <span className="font-medium w-24 truncate">{p.name}</span>
-                            <div className="flex space-x-2">
-                                <div className="flex items-center bg-gray-100 rounded px-1">
-                                    <span className="text-[9px] text-gray-500 mr-1">G</span>
-                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'goals', -1)} className="w-4 hover:text-red-500 font-bold">-</button>
-                                    <span className="w-3 text-center font-bold">{p.goals||0}</span>
-                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'goals', 1)} className="w-4 hover:text-green-500 font-bold">+</button>
-                                </div>
-                                <div className="flex items-center bg-gray-100 rounded px-1">
-                                    <span className="text-[9px] text-gray-500 mr-1">A</span>
-                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'assists', -1)} className="w-4 hover:text-red-500 font-bold">-</button>
-                                    <span className="w-3 text-center font-bold">{p.assists||0}</span>
-                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'assists', 1)} className="w-4 hover:text-green-500 font-bold">+</button>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            );
-
-            return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
-                    <div className="bg-white rounded-xl shadow-2xl p-4 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                        <h3 className="font-bold text-lg mb-2">Edit Match Stats</h3>
-                        <p className="text-xs text-gray-500 mb-4">Assign goals. Totals must match score. Roster is locked.</p>
-                        
-                        <form onSubmit={handleSave}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <TeamEditList list={teamA} teamKey="A" score={match.scoreA} total={totalGoalsA} />
-                                <TeamEditList list={teamB} teamKey="B" score={match.scoreB} total={totalGoalsB} />
-                            </div>
-                            <div className="flex justify-between items-center pt-2 border-t">
-                                {!isValid ? <span className="text-xs font-bold text-red-500">Goal count mismatch!</span> : <span></span>}
-                                <div className="flex space-x-2">
-                                    <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded text-sm font-bold">Cancel</button>
-                                    <button type="submit" disabled={!isValid} className={`px-4 py-2 rounded text-sm font-bold text-white ${isValid ? 'bg-blue-600' : 'bg-gray-300 cursor-not-allowed'}`}>Save</button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            );
-        };
-
         const EditPlayerForm = ({ player, onSave, onCancel }) => {
             const [form, setForm] = useState({...player});
             return (
@@ -393,6 +286,98 @@
                         </form>
                     </div>
                 </div>
+            );
+        };
+
+        const LogMatchForm = ({ players, onLogMatch }) => {
+            const [teamA, setTeamA] = useState([]);
+            const [teamB, setTeamB] = useState([]);
+            const [scoreA, setScoreA] = useState(0);
+            const [scoreB, setScoreB] = useState(0);
+            const [isTournamentMode, setIsTournamentMode] = useState(false);
+
+            const available = players.filter(p => !teamA.find(x=>x.id===p.id) && !teamB.find(x=>x.id===p.id));
+
+            const addPlayer = (p, team) => {
+                const entry = { ...p, matchGoals: 0, matchAssists: 0 };
+                if(team==='A') setTeamA([...teamA, entry]); else setTeamB([...teamB, entry]);
+            };
+
+            const updateStat = (id, team, field, delta) => {
+                const updater = list => list.map(p => {
+                    if(p.id !== id) return p;
+                    const val = Math.max(0, (p[field]||0) + delta);
+                    if(field==='matchGoals') {
+                        if(team==='A') setScoreA(s => Math.max(0, s + (val - (p.matchGoals||0))));
+                        else setScoreB(s => Math.max(0, s + (val - (p.matchGoals||0))));
+                    }
+                    return { ...p, [field]: val };
+                });
+                if(team==='A') setTeamA(updater(teamA)); else setTeamB(updater(teamB));
+            };
+
+            const TeamList = ({ list, teamKey, score, setScore }) => (
+                <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
+                    <div className="flex justify-between items-center mb-2">
+                        <span className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>{teamKey==='A'?'Blue':'Red'} ({list.length})</span>
+                        <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold bg-white" />
+                    </div>
+                    {list.map(p => (
+                        <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
+                            <div className="flex justify-between font-medium">
+                                <span>{p.name}</span>
+                                <button onClick={()=> teamKey==='A' ? setTeamA(teamA.filter(x=>x.id!==p.id)) : setTeamB(teamB.filter(x=>x.id!==p.id))} className="text-gray-300 hover:text-red-500 font-bold">×</button>
+                            </div>
+                            <div className="flex space-x-3 mt-1">
+                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
+                                    <span className="text-[10px] font-bold text-gray-400">G</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
+                                    <span className="font-bold w-3 text-center text-xs">{p.matchGoals}</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', 1)} className="text-blue-600 hover:text-blue-800 font-bold px-1">+</button>
+                                </div>
+                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
+                                    <span className="text-[10px] font-bold text-gray-400">A</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
+                                    <span className="font-bold w-3 text-center text-xs">{p.matchAssists}</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', 1)} className="text-green-600 hover:text-green-800 font-bold px-1">+</button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+
+            const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
+            const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
+            const prob = teamA.length && teamB.length ? (calculateExpectedScore(teamAEff, teamBEff)*100).toFixed(1) : '50.0';
+
+            return (
+                <form onSubmit={e=>{e.preventDefault(); onLogMatch(teamA, teamB, scoreA, scoreB, isTournamentMode)}} className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div className="bg-gray-100 p-2 rounded max-h-64 overflow-y-auto md:order-2">
+                            <p className="text-xs font-bold text-gray-500 mb-2">ROSTER</p>
+                            {available.map(p => (
+                                <div key={p.id} className="flex justify-between bg-white p-1 mb-1 rounded text-sm">
+                                    <span className="truncate">{p.name} <span className="text-xs text-gray-400">({p.elo})</span></span>
+                                    <div className="space-x-1">
+                                        <button type="button" onClick={()=>addPlayer(p,'A')} className="text-xs bg-blue-100 text-blue-600 px-1 rounded font-bold">+Blu</button>
+                                        <button type="button" onClick={()=>addPlayer(p,'B')} className="text-xs bg-red-100 text-red-600 px-1 rounded font-bold">+Red</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="md:order-1"><TeamList list={teamA} teamKey="A" score={scoreA} setScore={setScoreA} /></div>
+                        <div className="md:order-3"><TeamList list={teamB} teamKey="B" score={scoreB} setScore={setScoreB} /></div>
+                    </div>
+                    <div className="bg-white p-3 rounded shadow space-y-2">
+                        <div className="flex justify-between text-sm"><span>Win Prob (Blue):</span><span className={`font-bold ${teamAEff>teamBEff?'text-blue-600':'text-red-600'}`}>{prob}%</span></div>
+                        <label className="flex items-center space-x-2 text-sm select-none cursor-pointer bg-yellow-50 p-2 rounded">
+                            <input type="checkbox" checked={isTournamentMode} onChange={e=>setIsTournamentMode(e.target.checked)} className="accent-blue-600"/> 
+                            <span className="font-semibold text-gray-700">Tournament Mode (Equal players)</span>
+                        </label>
+                        <button type="submit" disabled={teamA.length===0 || teamB.length===0} className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white font-bold py-3 rounded shadow disabled:bg-gray-300">Update Ratings</button>
+                    </div>
+                </form>
             );
         };
 
@@ -462,7 +447,6 @@
             const [activeTab, setActiveTab] = useState('leaderboard');
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
             const [editingPlayer, setEditingPlayer] = useState(null);
-            const [editingMatch, setEditingMatch] = useState(null); 
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
             const fileInputRef = useRef(null);
@@ -497,91 +481,38 @@
             useEffect(() => {
                 if (!db) return;
                 
+                // Fetch Players
                 const qPlayers = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/players`));
                 const unsubPlayers = window.firebase.onSnapshot(qPlayers, (snapshot) => {
-                    const playerList = snapshot.docs.map(doc => ({
-                        id: doc.id,
-                        name: doc.data().name || "Unknown",
-                        elo: Number(doc.data().elo) || INITIAL_ELO,
-                        matchesPlayed: Number(doc.data().matchesPlayed) || 0,
-                        role: doc.data().role || "Midfielder",
-                        goals: Number(doc.data().goals) || 0,
-                        assists: Number(doc.data().assists) || 0,
-                        cleanSheets: Number(doc.data().cleanSheets) || 0,
-                        goalsFor: Number(doc.data().goalsFor) || 0,
-                        goalsAgainst: Number(doc.data().goalsAgainst) || 0
-                    }));
+                    const playerList = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        return {
+                            id: doc.id,
+                            name: data.name || "Unknown",
+                            elo: Number(data.elo) || INITIAL_ELO,
+                            matchesPlayed: Number(data.matchesPlayed) || 0,
+                            role: data.role || "Midfielder",
+                            goals: Number(data.goals) || 0,
+                            assists: Number(data.assists) || 0,
+                            cleanSheets: Number(data.cleanSheets) || 0,
+                            goalsFor: Number(data.goalsFor) || 0,
+                            goalsAgainst: Number(data.goalsAgainst) || 0
+                        };
+                    });
                     setPlayers(playerList);
                 });
 
-                const qHistory = window.firebase.query(
-                    window.firebase.collection(db, `artifacts/${appId}/public/data/history`),
-                    window.firebase.orderBy('timestamp', 'desc')
-                );
-                
+                // Fetch History (Sorted in memory for safety)
+                const qHistory = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/history`));
                 const unsubHistory = window.firebase.onSnapshot(qHistory, (snapshot) => {
                     const historyList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setHistory(historyList);
-                }, (err) => {
-                    const qFallback = window.firebase.query(window.firebase.collection(db, `artifacts/${appId}/public/data/history`));
-                    window.firebase.getDocs(qFallback).then(snap => {
-                        const logs = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                        logs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-                        setHistory(logs);
-                    });
-                });
+                }, (err) => console.error(err));
 
                 return () => { unsubPlayers(); unsubHistory(); };
             }, [db]);
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
-
-            // --- DATA MANAGEMENT ---
-
-            const handleDeleteMatch = async (matchId) => {
-                if (!db || !isAdmin) return;
-                if (confirm("Delete this log? (Note: This does NOT revert player stats. You must edit player stats manually if needed.)")) {
-                    try {
-                        await window.firebase.deleteDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/history`, matchId));
-                    } catch (e) { alert("Error deleting match: " + e.message); }
-                }
-            };
-
-            const handleUpdateMatchStats = async (matchId, updatedMatch) => {
-                if (!db || !isAdmin) return;
-                const oldMatch = history.find(h => h.id === matchId);
-                if (!oldMatch) return;
-
-                const batch = window.firebase.writeBatch(db);
-                
-                const processTeam = (oldTeam, newTeam) => {
-                    newTeam.forEach((newP, i) => {
-                        const oldP = oldTeam[i];
-                        const goalDiff = (newP.goals || 0) - (oldP.goals || 0);
-                        const assistDiff = (newP.assists || 0) - (oldP.assists || 0);
-                        
-                        if (goalDiff !== 0 || assistDiff !== 0) {
-                            const dbPlayer = players.find(p => p.name === newP.name);
-                            if (dbPlayer) {
-                                const ref = window.firebase.doc(db, `artifacts/${appId}/public/data/players`, dbPlayer.id);
-                                batch.update(ref, {
-                                    goals: window.firebase.increment(goalDiff),
-                                    assists: window.firebase.increment(assistDiff)
-                                });
-                            }
-                        }
-                    });
-                };
-
-                processTeam(oldMatch.teamA, updatedMatch.teamA);
-                processTeam(oldMatch.teamB, updatedMatch.teamB);
-
-                const histRef = window.firebase.doc(db, `artifacts/${appId}/public/data/history`, matchId);
-                batch.update(histRef, updatedMatch);
-
-                await batch.commit();
-                setEditingMatch(null);
-            };
 
             const handleExportData = () => {
                 const backup = { players, history, exportDate: new Date().toISOString() };
@@ -687,7 +618,6 @@
                     
                     const matchGoals = p.matchGoals || 0;
                     const matchAssists = p.matchAssists || 0;
-                    
                     const myTeamScore = isA ? scoreA : scoreB;
                     const opponentScore = isA ? scoreB : scoreA;
                     const earnedCleanSheet = (opponentScore === 0) ? 1 : 0;
@@ -742,9 +672,6 @@
                         {error && <div className="bg-red-100 text-red-700 p-2 rounded mb-4 text-sm">{error}</div>}
                         
                         {editingPlayer && <EditPlayerForm player={editingPlayer} onSave={handleUpdatePlayer} onCancel={()=>setEditingPlayer(null)} />}
-                        
-                        {/* EDIT MATCH MODAL (ZERO SUM ENFORCED) */}
-                        {editingMatch && <EditMatchModal match={editingMatch} onSave={handleUpdateMatchStats} onCancel={()=>setEditingMatch(null)} />}
 
                         {activeTab === 'leaderboard' && (
                             <div>
@@ -764,7 +691,7 @@
                         )}
 
                         {activeTab === 'stats' && <StatsTab players={players} />}
-                        {activeTab === 'history' && <HistoryTab history={history} isAdmin={isAdmin} onDelete={handleDeleteMatch} onEdit={setEditingMatch} />}
+                        {activeTab === 'history' && <HistoryTab history={history} />}
                         {activeTab === 'logMatch' && isAdmin && <LogMatchForm players={players} onLogMatch={handleLogMatch} />}
                     </main>
                 </div>
