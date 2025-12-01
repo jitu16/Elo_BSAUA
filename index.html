@@ -167,7 +167,7 @@
             );
         };
 
-        // UPDATED: History Tab (NO DELETE BUTTON)
+        // UPDATED: History Tab (Removed onDelete prop)
         const HistoryTab = ({ history, isAdmin, onEdit }) => {
             const [expandedMatches, setExpandedMatches] = useState({});
             const toggleMatch = (id) => setExpandedMatches(prev => ({ ...prev, [id]: !prev[id] }));
@@ -220,7 +220,6 @@
                                                             <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
                                                         </svg>
                                                     </button>
-                                                    {/* DELETED THE TRASH BUTTON HERE AS REQUESTED */}
                                                 </div>
                                             )}
                                             <div className="p-4 flex flex-col space-y-2 border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => toggleMatch(matchId)}>
@@ -478,37 +477,6 @@
                             <span className="font-semibold text-gray-700">Tournament Mode (Equal players)</span>
                         </label>
                         <button type="submit" disabled={teamA.length===0 || teamB.length===0} className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white font-bold py-3 rounded shadow disabled:bg-gray-300">Update Ratings</button>
-                    </div>
-                </form>
-            );
-        };
-
-        const AddPlayerForm = ({ onAdd, onCancel }) => {
-            const [name, setName] = useState('');
-            const [role, setRole] = useState('Midfielder');
-            const [elo, setElo] = useState(1500);
-
-            const handleSubmit = (e) => {
-                e.preventDefault();
-                if (!name.trim()) return;
-                onAdd(name, role, elo);
-            };
-
-            return (
-                <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-4 animate-fade-in">
-                    <h4 className="font-bold mb-2">New Player</h4>
-                    <div className="flex space-x-2 mb-2">
-                        <input value={name} onChange={e=>setName(e.target.value)} className="border p-2 rounded flex-1" placeholder="Name" required />
-                        <select value={role} onChange={e=>setRole(e.target.value)} className="border p-2 rounded">
-                            <option>Striker</option><option>Midfielder</option><option>Defender</option>
-                        </select>
-                    </div>
-                    <div className="flex justify-between items-center">
-                        <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="border p-2 rounded w-24" placeholder="Elo" />
-                        <div className="space-x-2">
-                            <button type="button" onClick={onCancel} className="text-gray-500 text-sm">Cancel</button>
-                            <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold">Add</button>
-                        </div>
                     </div>
                 </form>
             );
@@ -901,7 +869,7 @@
                         )}
 
                         {activeTab === 'stats' && <StatsTab players={players} />}
-                        {activeTab === 'history' && <HistoryTab history={history} isAdmin={isAdmin} onDelete={handleDeleteMatch} onEdit={setEditingMatch} />}
+                        {activeTab === 'history' && <HistoryTab history={history} isAdmin={isAdmin} onDelete={null} onEdit={setEditingMatch} />}
                         {activeTab === 'logMatch' && isAdmin && <LogMatchForm players={players} onLogMatch={handleLogMatch} />}
                     </main>
                 </div>
