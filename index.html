@@ -70,7 +70,10 @@
             const avgElo = teamPlayers.reduce((sum, p) => sum + (p.elo || INITIAL_ELO), 0) / teamPlayers.length;
             if (isTournamentMode) return avgElo;
             if (teamPlayers.length > opponentPlayers.length && opponentPlayers.length > 0) {
-                return avgElo * (teamPlayers.length / opponentPlayers.length); 
+                const diff = teamPlayers.length - opponentPlayers.length;
+                const smallerSize = opponentPlayers.length;
+                const multiplier = 1 + (5.0 * diff) / (smallerSize * smallerSize);
+                return avgElo * multiplier; 
             }
             return avgElo;
         };
