@@ -28,11 +28,11 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy, increment } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy, increment, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         
         window.firebase = {
             initializeApp, getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy, increment
+            getFirestore, collection, onSnapshot, query, setDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, orderBy, increment, getDoc
         };
     </script>
     
@@ -96,7 +96,6 @@
         // SUB-COMPONENTS
         // ==========================================
 
-        // 1. Stats Tab
         const StatsTab = ({ players }) => {
             const [filters, setFilters] = useState({ Striker: true, Midfielder: true, Defender: true });
             const [sortConfig, setSortConfig] = useState({ key: 'elo', direction: 'desc' });
@@ -168,8 +167,7 @@
             );
         };
 
-        // 2. History Tab
-        const HistoryTab = ({ history, isAdmin, onDelete, onEdit }) => {
+        const HistoryTab = ({ history, isAdmin, onEdit }) => { // Removed onDelete
             const [expandedMatches, setExpandedMatches] = useState({});
             const toggleMatch = (id) => setExpandedMatches(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -206,18 +204,23 @@
                                         <div key={matchId} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden relative group">
                                             {isAdmin && (
                                                 <div className="absolute top-2 left-2 flex space-x-1 z-20">
-                                                    <button onClick={(e) => { e.stopPropagation(); onEdit(match); }} className="bg-white p-1 rounded-full shadow border border-blue-100 text-blue-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Stats">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-                                                    </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); onDelete(matchId); }} className="bg-white p-1 rounded-full shadow border border-red-100 text-red-400 hover:text-red-600 hover:bg-red-50" title="Delete Log">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); onEdit(match); }} 
+                                                        className="bg-white p-1 rounded-full shadow border border-blue-100 text-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                                                        title="Edit Stats"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                                            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                                                        </svg>
                                                     </button>
                                                 </div>
                                             )}
                                             <div className="p-4 flex flex-col space-y-2 border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => toggleMatch(matchId)}>
-                                                <div className="flex justify-between items-center pl-14">
+                                                <div className="flex justify-between items-center pl-8"> 
                                                     <div className="text-2xl font-black tracking-tight">
-                                                        <span className="text-blue-600">{match.scoreA}</span><span className="text-gray-300 mx-2">-</span><span className="text-red-600">{match.scoreB}</span>
+                                                        <span className="text-blue-600">{match.scoreA}</span>
+                                                        <span className="text-gray-300 mx-2">-</span>
+                                                        <span className="text-red-600">{match.scoreB}</span>
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-[10px] text-gray-400">{new Date(match.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
@@ -225,7 +228,7 @@
                                                     </div>
                                                 </div>
                                                 {!isExpanded && (
-                                                    <div className="text-xs text-gray-500 space-y-1 pl-14">
+                                                    <div className="text-xs text-gray-500 space-y-1 pl-8">
                                                         <div className="flex"><span className="font-bold text-blue-600 w-12">Blue:</span><span className="truncate">{getScorers(match.teamA) || "No goals"}</span></div>
                                                         <div className="flex"><span className="font-bold text-red-600 w-12">Red:</span><span className="truncate">{getScorers(match.teamB) || "No goals"}</span></div>
                                                     </div>
@@ -239,7 +242,8 @@
                                                             <p className="font-bold text-blue-800 mb-2 uppercase text-[10px]">Blue Squad</p>
                                                             {(match.teamA||[]).map((p, i) => (
                                                                 <div key={i} className="flex justify-between text-gray-600 py-1 border-b border-gray-100 last:border-0">
-                                                                    <span>{p.name}</span><span className="font-bold">{p.goals>0&&<span className="ml-1 text-blue-600">⚽{p.goals}</span>}{p.assists>0&&<span className="ml-1 text-green-600">🅰{p.assists}</span>}</span>
+                                                                    <span>{p.name}</span>
+                                                                    <span className="font-bold">{p.goals>0&&<span className="ml-1 text-blue-600">⚽{p.goals}</span>}{p.assists>0&&<span className="ml-1 text-green-600">🅰{p.assists}</span>}</span>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -247,7 +251,8 @@
                                                             <p className="font-bold text-red-800 mb-2 uppercase text-[10px]">Red Squad</p>
                                                             {(match.teamB||[]).map((p, i) => (
                                                                 <div key={i} className="flex justify-between text-gray-600 py-1 border-b border-gray-100 last:border-0">
-                                                                    <span>{p.name}</span><span className="font-bold">{p.goals>0&&<span className="ml-1 text-red-600">⚽{p.goals}</span>}{p.assists>0&&<span className="ml-1 text-green-600">🅰{p.assists}</span>}</span>
+                                                                    <span>{p.name}</span>
+                                                                    <span className="font-bold">{p.goals>0&&<span className="ml-1 text-red-600">⚽{p.goals}</span>}{p.assists>0&&<span className="ml-1 text-green-600">🅰{p.assists}</span>}</span>
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -265,14 +270,12 @@
             );
         };
 
-        // 3. Edit Match Modal (WAS MISSING BEFORE)
         const EditMatchModal = ({ match, onSave, onCancel }) => {
             const [teamA, setTeamA] = useState(match.teamA ? [...match.teamA] : []);
             const [teamB, setTeamB] = useState(match.teamB ? [...match.teamB] : []);
             
             const totalGoalsA = teamA.reduce((acc, p) => acc + (p.goals || 0), 0);
             const totalGoalsB = teamB.reduce((acc, p) => acc + (p.goals || 0), 0);
-            
             const isValid = totalGoalsA === match.scoreA && totalGoalsB === match.scoreB;
 
             const updateStat = (teamKey, index, field, delta) => {
@@ -294,15 +297,29 @@
             const TeamEditList = ({ list, teamKey, score, total }) => (
                 <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'} border ${total !== score ? 'border-red-300' : 'border-transparent'}`}>
                     <div className="flex justify-between items-center mb-2">
-                        <h4 className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>{teamKey==='A'?'Blue':'Red'}</h4>
-                        <span className={`text-xs font-bold px-2 py-1 rounded ${total===score?'bg-white text-green-600':'bg-red-100 text-red-600'}`}>{total} / {score} Goals</span>
+                        <h4 className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>
+                            {teamKey==='A'?'Blue':'Red'}
+                        </h4>
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${total===score?'bg-white text-green-600':'bg-red-100 text-red-600'}`}>
+                            {total} / {score} Goals
+                        </span>
                     </div>
                     {list.map((p, i) => (
                         <div key={i} className="flex justify-between items-center bg-white p-2 mb-1 rounded text-xs shadow-sm">
                             <span className="font-medium w-24 truncate">{p.name}</span>
                             <div className="flex space-x-2">
-                                <div className="flex items-center bg-gray-100 px-1 rounded"><span className="text-[9px] text-gray-500 mr-1">G</span><button type="button" onClick={()=>updateStat(teamKey, i, 'goals', -1)} className="w-4 hover:text-red-500 font-bold">-</button><span className="w-3 text-center font-bold">{p.goals||0}</span><button type="button" onClick={()=>updateStat(teamKey, i, 'goals', 1)} className="w-4 hover:text-green-500 font-bold">+</button></div>
-                                <div className="flex items-center bg-gray-100 px-1 rounded"><span className="text-[9px] text-gray-500 mr-1">A</span><button type="button" onClick={()=>updateStat(teamKey, i, 'assists', -1)} className="w-4 hover:text-red-500 font-bold">-</button><span className="w-3 text-center font-bold">{p.assists||0}</span><button type="button" onClick={()=>updateStat(teamKey, i, 'assists', 1)} className="w-4 hover:text-green-500 font-bold">+</button></div>
+                                <div className="flex items-center bg-gray-100 px-1 rounded">
+                                    <span className="text-[9px] text-gray-500 mr-1">G</span>
+                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'goals', -1)} className="w-4 hover:text-red-500 font-bold">-</button>
+                                    <span className="w-3 text-center font-bold">{p.goals||0}</span>
+                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'goals', 1)} className="w-4 hover:text-green-500 font-bold">+</button>
+                                </div>
+                                <div className="flex items-center bg-gray-100 px-1 rounded">
+                                    <span className="text-[9px] text-gray-500 mr-1">A</span>
+                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'assists', -1)} className="w-4 hover:text-red-500 font-bold">-</button>
+                                    <span className="w-3 text-center font-bold">{p.assists||0}</span>
+                                    <button type="button" onClick={()=>updateStat(teamKey, i, 'assists', 1)} className="w-4 hover:text-green-500 font-bold">+</button>
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -313,7 +330,7 @@
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
                     <div className="bg-white rounded-xl shadow-2xl p-4 w-full max-w-lg max-h-[90vh] overflow-y-auto">
                         <h3 className="font-bold text-lg mb-2">Edit Match Stats</h3>
-                        <p className="text-xs text-gray-500 mb-4">Assign goals. Totals must match score. Roster is locked.</p>
+                        <p className="text-xs text-gray-500 mb-4">Assign goals. Totals must match final score.</p>
                         <form onSubmit={handleSave}>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <TeamEditList list={teamA} teamKey="A" score={match.scoreA} total={totalGoalsA} />
@@ -323,7 +340,7 @@
                                 {!isValid ? <span className="text-xs font-bold text-red-500 animate-pulse">Goal counts mismatch score!</span> : <span></span>}
                                 <div className="flex space-x-2">
                                     <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded text-sm font-bold">Cancel</button>
-                                    <button type="submit" disabled={!isValid} className={`px-4 py-2 rounded text-sm font-bold text-white ${isValid ? 'bg-blue-600' : 'bg-gray-300 cursor-not-allowed'}`}>Save Corrections</button>
+                                    <button type="submit" disabled={!isValid} className={`px-4 py-2 rounded text-sm font-bold text-white ${isValid ? 'bg-blue-600' : 'bg-gray-300 cursor-not-allowed'}`}>Save</button>
                                 </div>
                             </div>
                         </form>
@@ -332,39 +349,37 @@
             );
         };
 
-        // 4. TeamList (WAS MISSING, NOW RESTORED)
-        const TeamList = ({ list, teamKey, score, setScore, updateStat, removePlayer }) => (
-            <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
-                <div className="flex justify-between items-center mb-2">
-                    <span className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>{teamKey==='A'?'Blue':'Red'} ({list.length})</span>
-                    <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold bg-white" />
-                </div>
-                {list.map(p => (
-                    <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
-                        <div className="flex justify-between font-medium">
-                            <span>{p.name}</span>
-                            <button onClick={()=> removePlayer(p.id, teamKey)} className="text-gray-300 hover:text-red-500 font-bold">×</button>
-                        </div>
-                        <div className="flex space-x-3 mt-1">
-                            <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
-                                <span className="text-[10px] font-bold text-gray-400">G</span>
-                                <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
-                                <span className="font-bold w-3 text-center text-xs">{p.matchGoals}</span>
-                                <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', 1)} className="text-blue-600 hover:text-blue-800 font-bold px-1">+</button>
+        const EditPlayerForm = ({ player, onSave, onCancel }) => {
+            const [form, setForm] = useState({...player});
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+                        <h3 className="font-bold text-lg mb-4">Edit Player</h3>
+                        <form onSubmit={(e)=>{e.preventDefault(); onSave(player.id, form);}} className="space-y-4">
+                            <input value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full border p-2 rounded" placeholder="Name" required />
+                            <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})} className="w-full border p-2 rounded">
+                                <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                            </select>
+                            <div className="flex space-x-2">
+                                <div className="flex-1"><label className="text-xs font-bold">Elo</label><input type="number" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
+                                <div className="flex-1"><label className="text-xs font-bold">Matches</label><input type="number" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
                             </div>
-                            <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
-                                <span className="text-[10px] font-bold text-gray-400">A</span>
-                                <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
-                                <span className="font-bold w-3 text-center text-xs">{p.matchAssists}</span>
-                                <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', 1)} className="text-green-600 hover:text-green-800 font-bold px-1">+</button>
+                            <div className="grid grid-cols-4 gap-2 bg-gray-50 p-2 rounded text-center">
+                                <div><label className="text-[10px] font-bold">G</label><input type="number" value={form.goals||0} onChange={e=>setForm({...form, goals:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
+                                <div><label className="text-[10px] font-bold">A</label><input type="number" value={form.assists||0} onChange={e=>setForm({...form, assists:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
+                                <div><label className="text-[10px] font-bold text-green-600">GF</label><input type="number" value={form.goalsFor||0} onChange={e=>setForm({...form, goalsFor:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
+                                <div><label className="text-[10px] font-bold text-red-600">GA</label><input type="number" value={form.goalsAgainst||0} onChange={e=>setForm({...form, goalsAgainst:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
                             </div>
-                        </div>
+                            <div className="flex justify-end space-x-2">
+                                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+                                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
+                            </div>
+                        </form>
                     </div>
-                ))}
-            </div>
-        );
+                </div>
+            );
+        };
 
-        // 5. Log Match Form
         const LogMatchForm = ({ players, onLogMatch }) => {
             const [teamA, setTeamA] = useState([]);
             const [teamB, setTeamB] = useState([]);
@@ -396,6 +411,37 @@
                 });
                 if(team==='A') setTeamA(updater(teamA)); else setTeamB(updater(teamB));
             };
+
+            const TeamList = ({ list, teamKey, score, setScore }) => (
+                <div className={`p-2 rounded ${teamKey==='A'?'bg-blue-50':'bg-red-50'}`}>
+                    <div className="flex justify-between items-center mb-2">
+                        <span className={`font-bold ${teamKey==='A'?'text-blue-800':'text-red-800'}`}>{teamKey==='A'?'Blue':'Red'} ({list.length})</span>
+                        <input type="number" value={score} onChange={e=>setScore(Number(e.target.value))} className="w-12 text-center border rounded font-bold bg-white" />
+                    </div>
+                    {list.map(p => (
+                        <div key={p.id} className="bg-white p-2 mb-1 rounded text-sm shadow-sm">
+                            <div className="flex justify-between font-medium">
+                                <span>{p.name}</span>
+                                <button onClick={()=> removePlayer(p.id, teamKey)} className="text-gray-300 hover:text-red-500 font-bold">×</button>
+                            </div>
+                            <div className="flex space-x-3 mt-1">
+                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
+                                    <span className="text-[10px] font-bold text-gray-400">G</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
+                                    <span className="font-bold w-3 text-center text-xs">{p.matchGoals}</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchGoals', 1)} className="text-blue-600 hover:text-blue-800 font-bold px-1">+</button>
+                                </div>
+                                <div className="flex items-center space-x-1 bg-gray-100 rounded px-1">
+                                    <span className="text-[10px] font-bold text-gray-400">A</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', -1)} className="text-gray-500 hover:text-red-500 font-bold px-1">-</button>
+                                    <span className="font-bold w-3 text-center text-xs">{p.matchAssists}</span>
+                                    <button type="button" onClick={()=>updateStat(p.id, teamKey, 'matchAssists', 1)} className="text-green-600 hover:text-green-800 font-bold px-1">+</button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
 
             const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
             const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
@@ -430,40 +476,7 @@
                 </form>
             );
         };
-        
-        // 6. Edit Player Form
-        const EditPlayerForm = ({ player, onSave, onCancel }) => {
-            const [form, setForm] = useState({...player});
-            return (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
-                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-                        <h3 className="font-bold text-lg mb-4">Edit Player</h3>
-                        <form onSubmit={(e)=>{e.preventDefault(); onSave(player.id, form);}} className="space-y-4">
-                            <input value={form.name} onChange={e=>setForm({...form, name:e.target.value})} className="w-full border p-2 rounded" placeholder="Name" required />
-                            <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})} className="w-full border p-2 rounded">
-                                <option>Striker</option><option>Midfielder</option><option>Defender</option>
-                            </select>
-                            <div className="flex space-x-2">
-                                <div className="flex-1"><label className="text-xs font-bold">Elo</label><input type="number" value={form.elo} onChange={e=>setForm({...form, elo:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
-                                <div className="flex-1"><label className="text-xs font-bold">Matches</label><input type="number" value={form.matchesPlayed} onChange={e=>setForm({...form, matchesPlayed:Number(e.target.value)})} className="w-full border p-2 rounded" /></div>
-                            </div>
-                            <div className="grid grid-cols-4 gap-2 bg-gray-50 p-2 rounded text-center">
-                                <div><label className="text-[10px] font-bold">G</label><input type="number" value={form.goals||0} onChange={e=>setForm({...form, goals:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
-                                <div><label className="text-[10px] font-bold">A</label><input type="number" value={form.assists||0} onChange={e=>setForm({...form, assists:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
-                                <div><label className="text-[10px] font-bold text-green-600">GF</label><input type="number" value={form.goalsFor||0} onChange={e=>setForm({...form, goalsFor:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
-                                <div><label className="text-[10px] font-bold text-red-600">GA</label><input type="number" value={form.goalsAgainst||0} onChange={e=>setForm({...form, goalsAgainst:Number(e.target.value)})} className="w-full border p-1 rounded text-xs" /></div>
-                            </div>
-                            <div className="flex justify-end space-x-2">
-                                <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
-                                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            );
-        };
 
-        // 7. Add Player Form
         const AddPlayerForm = ({ onAdd, onCancel }) => {
             const [name, setName] = useState('');
             const [role, setRole] = useState('Midfielder');
@@ -495,7 +508,6 @@
             );
         };
 
-        // 8. Player Item
         const PlayerItem = ({ player, rank, isAdmin, onEdit, onDelete }) => (
             <div className={`flex justify-between items-center p-3 my-1 rounded shadow-sm border ${rank<=3?'bg-yellow-50 border-yellow-200':'bg-white'}`}>
                 <div className="flex items-center space-x-3">
@@ -531,7 +543,7 @@
             const [activeTab, setActiveTab] = useState('leaderboard');
             const [isAddingPlayer, setIsAddingPlayer] = useState(false);
             const [editingPlayer, setEditingPlayer] = useState(null);
-            const [editingMatch, setEditingMatch] = useState(null); 
+            const [editingMatch, setEditingMatch] = useState(null); // NEW
             const [isLoading, setIsLoading] = useState(true);
             const [error, setError] = useState(null);
             const fileInputRef = useRef(null);
@@ -605,17 +617,60 @@
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            const handleDeleteMatch = async (matchId) => {
-                if (!db || !isAdmin) return;
-                if (confirm("Delete this log? (Note: This does NOT revert player stats automatically.)")) {
-                    try {
-                        await window.firebase.deleteDoc(window.firebase.doc(db, `artifacts/${appId}/public/data/history`, matchId));
-                    } catch (e) { alert("Error deleting match: " + e.message); }
-                }
+            // NEW: Cloud Undo Logic
+            const createUndoPoint = async () => {
+                if (!db) return;
+                const batch = window.firebase.writeBatch(db);
+                const undoRef = window.firebase.doc(db, `artifacts/${appId}/private/undo_state`);
+                // Snapshot current state
+                batch.set(undoRef, { 
+                    players: players, 
+                    history: history, 
+                    timestamp: new Date().toISOString() 
+                });
+                await batch.commit();
             };
 
+            const handleUndo = async () => {
+                if (!confirm("⚠️ DANGER: Undo last action? This will revert database to previous state.")) return;
+                setIsLoading(true);
+                try {
+                    const undoRef = window.firebase.doc(db, `artifacts/${appId}/private/undo_state`);
+                    const snap = await window.firebase.getDoc(undoRef);
+                    
+                    if (!snap.exists()) throw new Error("No undo point found.");
+                    const data = snap.data();
+
+                    const batch = window.firebase.writeBatch(db);
+                    
+                    // Wipe & Restore
+                    const pRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
+                    const hRef = window.firebase.collection(db, `artifacts/${appId}/public/data/history`);
+
+                    // Note: For a true robust undo, we delete everything first. 
+                    // In this simple version, we overwrite IDs.
+                    // (Ideally we'd do full delete, but batch limit is 500 ops).
+                    
+                    data.players.forEach(p => {
+                        batch.set(window.firebase.doc(pRef, p.id), p);
+                    });
+                    data.history.forEach(h => {
+                        batch.set(window.firebase.doc(hRef, h.id), h);
+                    });
+
+                    await batch.commit();
+                    alert("Undo Successful!");
+                } catch (e) { alert("Undo Failed: " + e.message); }
+                setIsLoading(false);
+            };
+
+            // NEW: Edit Match Stats Logic (Delta Updates)
             const handleUpdateMatchStats = async (matchId, updatedMatch) => {
                 if (!db || !isAdmin) return;
+                
+                // Auto-Save Undo Point before edit
+                await createUndoPoint();
+
                 const oldMatch = history.find(h => h.id === matchId);
                 if (!oldMatch) return;
 
@@ -735,6 +790,10 @@
 
             const handleLogMatch = async (teamA, teamB, scoreA, scoreB, isTournamentMode) => {
                 if (!db || !isAdmin) return;
+                
+                // Auto-Save Undo Point before match update
+                await createUndoPoint();
+
                 const teamAEff = getEffectiveElo(teamA, teamB, isTournamentMode);
                 const teamBEff = getEffectiveElo(teamB, teamA, isTournamentMode);
                 let sA, sB;
@@ -817,6 +876,11 @@
                             <div>
                                 {isAdmin && (
                                     <div className="flex justify-end space-x-2 mb-4">
+                                        {/* UNDO BUTTON */}
+                                        <button onClick={handleUndo} className="text-xs bg-red-100 text-red-700 border border-red-300 px-2 py-1 rounded shadow font-bold flex items-center">
+                                            <span className="mr-1">↩</span> Undo Last
+                                        </button>
+                                        
                                         <button onClick={handleExportData} className="text-xs bg-gray-200 px-2 py-1 rounded shadow">Backup</button>
                                         <button onClick={()=>fileInputRef.current.click()} className="text-xs bg-orange-200 text-orange-800 px-2 py-1 rounded shadow">Restore</button>
                                         <input type="file" ref={fileInputRef} onChange={handleImportData} className="hidden" />
