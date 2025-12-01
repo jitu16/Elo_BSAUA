@@ -167,8 +167,7 @@
             );
         };
 
-        // UPDATED: History Tab (Removed onDelete prop)
-        const HistoryTab = ({ history, isAdmin, onEdit }) => {
+        const HistoryTab = ({ history, isAdmin, onDelete, onEdit }) => {
             const [expandedMatches, setExpandedMatches] = useState({});
             const toggleMatch = (id) => setExpandedMatches(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -211,23 +210,15 @@
                                         <div key={matchId} className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden relative group">
                                             {isAdmin && (
                                                 <div className="absolute top-2 left-2 flex space-x-1 z-20">
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); onEdit(match); }} 
-                                                        className="bg-white p-1 rounded-full shadow border border-blue-100 text-blue-400 hover:text-blue-600 hover:bg-blue-50"
-                                                        title="Edit Stats (Zero Sum)"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                                            <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                                                        </svg>
+                                                    <button onClick={(e) => { e.stopPropagation(); onEdit(match); }} className="bg-white p-1 rounded-full shadow border border-blue-100 text-blue-400 hover:text-blue-600 hover:bg-blue-50" title="Edit Stats (Zero Sum)">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
                                                     </button>
                                                 </div>
                                             )}
                                             <div className="p-4 flex flex-col space-y-2 border-l-4 border-blue-500 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => toggleMatch(matchId)}>
-                                                <div className="flex justify-between items-center pl-10">
+                                                <div className="flex justify-between items-center pl-10"> 
                                                     <div className="text-2xl font-black tracking-tight">
-                                                        <span className="text-blue-600">{match.scoreA}</span>
-                                                        <span className="text-gray-300 mx-2">-</span>
-                                                        <span className="text-red-600">{match.scoreB}</span>
+                                                        <span className="text-blue-600">{match.scoreA}</span><span className="text-gray-300 mx-2">-</span><span className="text-red-600">{match.scoreB}</span>
                                                     </div>
                                                     <div className="text-right">
                                                         <div className="text-[10px] text-gray-400">{new Date(match.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
@@ -482,6 +473,37 @@
             );
         };
 
+        const AddPlayerForm = ({ onAdd, onCancel }) => {
+            const [name, setName] = useState('');
+            const [role, setRole] = useState('Midfielder');
+            const [elo, setElo] = useState(1500);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!name.trim()) return;
+                onAdd(name, role, elo);
+            };
+
+            return (
+                <form onSubmit={handleSubmit} className="bg-white p-4 rounded shadow mb-4 animate-fade-in">
+                    <h4 className="font-bold mb-2">New Player</h4>
+                    <div className="flex space-x-2 mb-2">
+                        <input value={name} onChange={e=>setName(e.target.value)} className="border p-2 rounded flex-1" placeholder="Name" required />
+                        <select value={role} onChange={e=>setRole(e.target.value)} className="border p-2 rounded">
+                            <option>Striker</option><option>Midfielder</option><option>Defender</option>
+                        </select>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <input type="number" value={elo} onChange={e=>setElo(e.target.value)} className="border p-2 rounded w-24" placeholder="Elo" />
+                        <div className="space-x-2">
+                            <button type="button" onClick={onCancel} className="text-gray-500 text-sm">Cancel</button>
+                            <button type="submit" className="bg-blue-600 text-white px-3 py-1 rounded text-sm font-bold">Add</button>
+                        </div>
+                    </div>
+                </form>
+            );
+        };
+
         const PlayerItem = ({ player, rank, isAdmin, onEdit, onDelete }) => (
             <div className={`flex justify-between items-center p-3 my-1 rounded shadow-sm border ${rank<=3?'bg-yellow-50 border-yellow-200':'bg-white'}`}>
                 <div className="flex items-center space-x-3">
@@ -591,12 +613,11 @@
 
             const sortedPlayers = useMemo(() => [...players].sort((a, b) => b.elo - a.elo), [players]);
 
-            // NEW: Cloud Undo Logic
+            // UPDATED: Cloud Undo Logic (Wipe & Restore)
             const createUndoPoint = async () => {
                 if (!db) return;
                 const batch = window.firebase.writeBatch(db);
                 const undoRef = window.firebase.doc(db, `artifacts/${appId}/private/undo_state`);
-                // Snapshot current state
                 batch.set(undoRef, { 
                     players: players, 
                     history: history, 
@@ -606,7 +627,7 @@
             };
 
             const handleUndo = async () => {
-                if (!confirm("⚠️ DANGER: Undo last action? This will revert database to previous state.")) return;
+                if (!confirm("⚠️ DANGER: Undo last action? This will revert the entire database to the previous state.")) return;
                 setIsLoading(true);
                 try {
                     const undoRef = window.firebase.doc(db, `artifacts/${appId}/private/undo_state`);
@@ -616,21 +637,19 @@
                     const data = snap.data();
 
                     const batch = window.firebase.writeBatch(db);
-                    
-                    // Wipe & Restore
                     const pRef = window.firebase.collection(db, `artifacts/${appId}/public/data/players`);
                     const hRef = window.firebase.collection(db, `artifacts/${appId}/public/data/history`);
 
-                    // Note: For a true robust undo, we delete everything first. 
-                    // In this simple version, we overwrite IDs.
-                    // (Ideally we'd do full delete, but batch limit is 500 ops).
-                    
-                    data.players.forEach(p => {
-                        batch.set(window.firebase.doc(pRef, p.id), p);
-                    });
-                    data.history.forEach(h => {
-                        batch.set(window.firebase.doc(hRef, h.id), h);
-                    });
+                    // 1. WIPE CURRENT DATA
+                    const currentPlayers = await window.firebase.getDocs(pRef);
+                    currentPlayers.forEach(doc => batch.delete(doc.ref));
+
+                    const currentHistory = await window.firebase.getDocs(hRef);
+                    currentHistory.forEach(doc => batch.delete(doc.ref));
+
+                    // 2. RESTORE FROM SNAPSHOT
+                    data.players.forEach(p => batch.set(window.firebase.doc(pRef, p.id), p));
+                    data.history.forEach(h => batch.set(window.firebase.doc(hRef, h.id), h));
 
                     await batch.commit();
                     alert("Undo Successful!");
